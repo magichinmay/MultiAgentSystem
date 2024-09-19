@@ -8,36 +8,44 @@ class SchedulerAgent(Agent):
     class SchedulerBehaviour(CyclicBehaviour):
         def __init__(self):
             super().__init__()
-            self.breakdown_triggered = False  # Flag to check if "breakdown" was triggered
             self.coordinates = [1.0, 2.0, 3.0, 4.0]  # Example list of coordinates
-            self.index = 0  # Index to track which coordinate to send
+            self.index = 0  # Keep track of which coordinate to send
+            self.waiting_for_idle = False  # Flag to track waiting for idle response
 
         async def run(self):
-            if self.breakdown_triggered:
-                # If "breakdown" was triggered, send "breakdown" message
+            if not self.waiting_for_idle:
+                # Send a query to check if AMR1 is in "Idle" state
                 msg = Message(to="robot1@jabber.fr")  # JID of the AMR1 agent
-                msg.set_metadata("performative", "inform")
-                msg.body = "breakdown"
+                msg.set_metadata("performative", "request")  # Requesting the state
+                msg.body = "status_check"
                 await self.send(msg)
-                print("Sending: 'breakdown' to robot1")
-                self.breakdown_triggered = False  # Reset the flag
-                await asyncio.sleep(5)  # Wait before the next cycle
-            else:
-                # Send coordinates cyclically
-                point = self.coordinates[self.index]
-                msg = Message(to="robot1@jabber.fr")  # JID of the AMR1 agent
-                msg.set_metadata("performative", "inform")
-                msg.body = json.dumps(point)  # Convert the coordinate to JSON string
-                await self.send(msg)
-                print(f"Sending coordinate: {point} to robot1")
-                
-                # Update index and reset if needed
-                self.index = (self.index + 1) % len(self.coordinates)
+                print("Sent status check to AMR1")
+                self.waiting_for_idle = True  # Wait for a response before sending coordinates
 
-                await asyncio.sleep(5)  # Wait 5 seconds before sending the next point
+            # Listen for a response
+            response = await self.receive(timeout=10)  # Wait for 10 seconds for a response
+            if response:
+                if response.body == "Idle":
+                    # AMR1 is idle, send the next coordinate
+                    point = self.coordinates[self.index]
+                    msg = Message(to="robot1@jabber.fr")  # JID of the AMR1 agent
+                    msg.set_metadata("performative", "inform")
+                    msg.body = json.dumps(point)  # Convert the coordinate to JSON string
+                    await self.send(msg)
+                    print(f"Sending coordinate: {point} to AMR1")
+
+                    # Update index for next coordinate
+                    self.index = (self.index + 1) % len(self.coordinates)
+
+                    await asyncio.sleep(5)  # Wait before sending the next point
+                else:
+                    print("AMR1 is not in Idle state, retrying...")
+                self.waiting_for_idle = False  # Reset to send the next query
+            else:
+                print("No response from AMR1, will retry after some time.")
+                await asyncio.sleep(5)  # Wait before checking again
 
     async def setup(self):
-        # Add the cyclic behaviour to send coordinates or handle breakdown
         scheduler_behaviour = self.SchedulerBehaviour()
         self.add_behaviour(scheduler_behaviour)
 
@@ -48,15 +56,9 @@ if __name__ == "__main__":
         await scheduler_agent.start()
         print("SchedulerAgent started")
 
-        # Keep the agent running
         try:
             while scheduler_agent.is_alive():
                 await asyncio.sleep(1)
-                # Check user input in a non-blocking manner
-                user_input = input("Enter 'breakdown' to trigger breakdown, or press Enter to continue: ").strip()
-                if user_input.lower() == "breakdown":
-                    print("Breakdown triggered!")
-                    scheduler_agent.behaviours[0].breakdown_triggered = True
         except KeyboardInterrupt:
             await scheduler_agent.stop()
 

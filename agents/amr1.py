@@ -17,22 +17,31 @@ class AMR1(Agent):
             print("State: Idle. Waiting for coordinates or breakdown signal...")
             msg = await self.receive(timeout=10)  # Wait for a message with a 10-second timeout
             if msg:
-                if msg.body == "breakdown":
-                    print("Received breakdown message. Switching to Breakdown state.")
-                    self.set_next_state("breakdown")
-                else:
+                performative = msg.get_metadata("performative")
+                if performative == "request" and msg.body == "status_check":
+                    # Respond with "Idle" state
+                    reply = Message(to=str(msg.sender))  # Convert sender to string explicitly
+                    reply.set_metadata("performative", "inform")
+                    reply.body = "Idle"
+                    await self.send(reply)
+                    print("Sent Idle status to SchedulerAgent.")
+                    self.set_next_state("Idle")
+                elif performative == "inform":
                     try:
-                        coordinates = json.loads(msg.body)  # Deserialize the received JSON message into a list
-                        if isinstance(coordinates, float):  # Ensure it's a valid list
+                        coordinates = json.loads(msg.body)  # Deserialize the received JSON message
+                        if isinstance(coordinates, float):  # Ensure it's a valid coordinate
                             print(f"Received coordinates: {coordinates}")
                             self.agent.coordinates = coordinates  # Store coordinates for later processing
                             self.set_next_state("Processing")
                         else:
-                            print("Error: Received data is not a valid list.")
+                            print("Error: Received data is not a valid coordinate.")
                             self.set_next_state("Idle")
                     except json.JSONDecodeError:
                         print("Error: Unable to decode message body as JSON.")
                         self.set_next_state("Idle")
+                else:
+                    print("Unrecognized message type.")
+                    self.set_next_state("Idle")
             else:
                 print("No message received. Remaining in Idle state.")
                 self.set_next_state("Idle")
@@ -80,7 +89,6 @@ if __name__ == "__main__":
         await amr1.start()
         print("AMR1 started")
 
-        # Run the agent
         try:
             while amr1.is_alive():
                 await asyncio.sleep(1)
