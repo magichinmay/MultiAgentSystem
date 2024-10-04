@@ -19,8 +19,10 @@ class SchedulerAgent(Agent):
         
         machine_data = benchmarks.pinedo['machine_data']
         ptime_data = benchmarks.pinedo['ptime_data']
-        amrs = 2
-        jobs=3
+        self.amrs = 3
+        amrs=self.amrs
+        self.jobs=3
+        jobs=self.jobs
         machines=4
         scheduler1 = JobShopScheduler(machines, jobs, amrs, 50, 0.7, 0.5, 100, machine_data, ptime_data)
         scheduler1.display_schedule = 0
@@ -29,11 +31,13 @@ class SchedulerAgent(Agent):
 
         amr1=chromsome1.amr_list[0]
         amr2=chromsome1.amr_list[1]
-        amr_jobs=[amr1.completed_jobs,amr2.completed_jobs]
+        amr3=chromsome1.amr_list[2]
+        self.amr_jobs=[amr1.completed_jobs,amr2.completed_jobs,amr3.completed_jobs]
 
         print("amr1",amr1.completed_jobs)
         print("amr2",amr2.completed_jobs)
-        print("amr",amr_jobs)
+        print("amr3",amr3.completed_jobs)
+        print("amr",self.amr_jobs)
         print("Machine Sequence", self.operation_list)
         print("Machine Sequence", self.operation_list[0])
 
@@ -43,7 +47,7 @@ class SchedulerAgent(Agent):
         
         self.index1 = 0  # Keep track of which coordinate to send
         self.index2 = 0 
-
+        self.robots = []
         self.JobAgents=["job1@jabber.fr","job2@jabber.fr","job3@jabber.fr"]
 
     class AMRFSM(FSMBehaviour):
@@ -58,6 +62,7 @@ class SchedulerAgent(Agent):
             for index,element in enumerate(self.agent.JobAgents):
                 await asyncio.sleep(5)
                 msg=Message(to=element)
+                print(element)
                 msg.set_metadata("performative","say")
                 msg.body="status"
                 await self.send(msg)
@@ -74,35 +79,45 @@ class SchedulerAgent(Agent):
                         msg.body = json.dumps(operation_and_ptime)
                         await self.send(msg)
             await asyncio.sleep(2)
+            print("Changing state to RobotRegister")
             self.set_next_state("RobotRegister")
 
     class RobotRegister(State):
         async def run(self):
-            x=True
-            self.robots = []
+            x=True         
             while x==True:
-                msg = await self.receive(timeout=15)
+                msg = await self.receive(timeout=None)
                 if msg:
                     performative = msg.get_metadata("performative")
                     if performative == "Register":
-                        self.robots.append(msg.body)
+                        self.agent.robots.append(msg.body)
                         msg1 = Message(to=msg.body)
                         msg1.set_metadata("performative", "inform")
                         msg1.body = "Registered"
                         await self.send(msg1)
                         print(msg.body, "successfully registered")
-                        if len(self.robots)>=self.agent.amrs:
+                        if len(self.agent.robots)>=self.agent.amrs:
                             x=False
                 else:
                     print("No response from AMR, will retry after some time.")
                     await asyncio.sleep(5)
 
-            for i,amr in enumerate(self.robots):
-                msg=Message(to=amr)
-                msg.set_metadata("performative", "order")
-                msg.body = json.dumps(self.agent.amr_jobs[i])
-                await self.send(msg)
-                await asyncio.sleep(3)
+            robots1=self.agent.robots
+            i=0
+            while self.agent.amrs>=i:
+                msg1=await self.receive(timeout=None)
+                if msg1:
+                    performative = msg1.get_metadata("performative")
+                    if performative == "ask" and msg1.body=="my job":
+                        msg=Message(to=msg1.sender)
+                        print(msg1.sender)
+                        msg.set_metadata("performative", "order")
+                        msg.body = json.dumps(self.agent.amr_jobs[i])
+                        i+=1
+                        print(msg.body)
+                        await self.send(msg)
+                        print("sent jobs to",msg1.sender)
+                        await asyncio.sleep(3)
             self.set_next_state("JobComplete")
 
     class JobComplete(State):

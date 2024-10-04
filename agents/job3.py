@@ -16,7 +16,7 @@ import distances
 class JobAgent3(Agent):
     def __init__(self, jid, password):
         super().__init__(jid, password)
-        print("Running Job Agent 3")
+        print("Running Job Agent 1")
         # Initialize state1 and state2
         self.state = "waiting for schedule"  # Added initialization for state1
 
@@ -52,6 +52,7 @@ class JobAgent3(Agent):
                             self.agent.data = json.loads(msg.body)
                             if isinstance(self.agent.data, list):
                                 print(f"Received Operations: {self.agent.data}")
+                                x=False
                                 self.set_next_state("sendingcoordinates")
                             else:
                                 print("Error: Received data is not a valid coordinate.")
@@ -61,10 +62,11 @@ class JobAgent3(Agent):
                             self.set_next_state("waitingforjob")
                 else:
                     print("No response from AMR, will retry after some time.")
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(5)
 
     class sendingcoordinates(State):
         async def run(self):
+            print("Changing state to sendingcoordinates")
             y=True
             while y==True:
                 job = await self.receive(timeout=None)
@@ -81,9 +83,9 @@ class JobAgent3(Agent):
                     if self.agent.index < len(self.agent.data)-1:
                         self.agent.index += 1
                     else:
-                        complete1 = Message(to="robot1@jabber.fr")
+                        complete1 = Message(to=job.sender)
                         complete1.set_metadata("performative", "inform")
-                        complete1.body = "AMR1 tasks are done"
+                        complete1.body = "tasks are done"
                         self.agent.state = "Complete"
                         await self.send(complete1)
                         await asyncio.sleep(3)
@@ -115,7 +117,6 @@ class JobAgent3(Agent):
         fsm.add_transition(source="sendingcoordinates", dest="waitingforjob")
         fsm.add_transition(source="sendingcoordinates", dest="JobComplete")
         fsm.add_transition(source="JobComplete", dest="waitingforjob")
-        
 
         self.add_behaviour(fsm)
 

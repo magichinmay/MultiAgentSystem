@@ -52,6 +52,7 @@ class JobAgent1(Agent):
                             self.agent.data = json.loads(msg.body)
                             if isinstance(self.agent.data, list):
                                 print(f"Received Operations: {self.agent.data}")
+                                x=False
                                 self.set_next_state("sendingcoordinates")
                             else:
                                 print("Error: Received data is not a valid coordinate.")
@@ -65,6 +66,7 @@ class JobAgent1(Agent):
 
     class sendingcoordinates(State):
         async def run(self):
+            print("Changing state to sendingcoordinates")
             y=True
             while y==True:
                 job = await self.receive(timeout=None)
@@ -81,9 +83,9 @@ class JobAgent1(Agent):
                     if self.agent.index < len(self.agent.data)-1:
                         self.agent.index += 1
                     else:
-                        complete1 = Message(to="robot1@jabber.fr")
+                        complete1 = Message(to=job.sender)
                         complete1.set_metadata("performative", "inform")
-                        complete1.body = "AMR1 tasks are done"
+                        complete1.body = "tasks are done"
                         self.agent.state = "Complete"
                         await self.send(complete1)
                         await asyncio.sleep(3)

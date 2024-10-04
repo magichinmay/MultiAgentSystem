@@ -12,6 +12,12 @@ import rclpy
 class AMR1(Agent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.jobs=0
+        self.JobsAgents={
+            '0':"job1@jabber.fr",
+            '1':"job2@jabber.fr",
+            '2':"job3@jabber.fr"
+        }
 
     class AMRFSM(FSMBehaviour):
         async def on_start(self):
@@ -29,34 +35,39 @@ class AMR1(Agent):
             register.body = "robot1@jabber.fr"
             await self.send(register)  # Sending the register message
             await asyncio.sleep(2)
-            msg1 = await self.receive(timeout=5)
+            msg1 = await self.receive(timeout=None)
             if msg1:
                 performative = msg1.get_metadata("performative")
                 if performative == "inform" and msg1.body == "Registered":
                     print("Successfully Registered")
-            self.set_next_state("Idle")
+                    ask=Message(to="scheduler@jabber.fr")
+                    ask.set_metadata("performative", "ask")
+                    ask.body = "my job"
+                    print(ask.body)
+                    await self.send(ask)
+                    await asyncio.sleep(3)
+                    print("chaning state to waitingforjob")
+                    self.set_next_state("waitingforjob")
+                else:
+                    print("Failed to register. Staying in Ready state.")
+            else:
+                print("No response from scheduler. Staying in Ready state.")
+                self.set_next_state("Ready")
 
-    class Idle(State):
+    class waitingforjob(State):
         async def run(self):
-            reply = Message(to="scheduler@jabber.fr")
-            reply.set_metadata("performative", "robot1@jabber.fr")
-            reply.body = "Idle"
-            await self.send(reply)
-            print("Sent Idle status to Job Agent.")
-            await asyncio.sleep(1)
-            msg = await self.receive(timeout=10)
-            if msg:
-                performative = msg.get_metadata("performative")
-                if performative == "order":
+            my_job=await self.receive(timeout=15)
+            if my_job:
+                print("waiting for jobs")
+                performative = my_job.get_metadata("performative")
+                if performative=="order":
                     try:
-                        data2 = json.loads(msg.body)
-                        machine=data2[0]
-                        ptime=data2[1]
-                        if isinstance(machine, int):
-                            print(f"Received coordinates: {machine}")
-                            self.agent.machine = machine
-                            self.agent.ptime = ptime
-                            self.set_next_state("Processing")
+                        job = json.loads(my_job.body)
+                        if isinstance(job, list):
+                            print(f"Received coordinates: {job}")
+                            job = [str(element) for element in job]
+                            self.agent.jobs=job
+                            self.set_next_state("Idle")
                         else:
                             print("Error: Received data is not a valid coordinate.")
                             self.set_next_state("Idle")
@@ -64,15 +75,45 @@ class AMR1(Agent):
                         print("Error: Unable to decode message body as JSON.")
                         self.set_next_state("Idle")
 
-                elif performative == "user_input" and msg.body == "breakdown":
-                    self.set_next_state("Breakdown")
 
-                elif performative=="inform" and msg.body=="AMR1 tasks are done":
-                    self.set_next_state("Dock")
+    class Idle(State):
+        async def run(self):
+            for index in self.agent.jobs:
+                reply = Message(to=self.agent.JobsAgents[index])
+                reply.set_metadata("performative", "request")
+                reply.body = "Idle"
+                await self.send(reply)
+                print("Sent Idle status to Job Agent.")
+                await asyncio.sleep(1)
+                msg = await self.receive(timeout=10)
+                if msg:
+                    performative = msg.get_metadata("performative")
+                    if performative == "order":
+                        try:
+                            data2 = json.loads(msg.body)
+                            machine=data2[0]
+                            ptime=data2[1]
+                            if isinstance(machine, int):
+                                print(f"Received coordinates: {machine}")
+                                self.agent.machine = machine
+                                self.agent.ptime = ptime
+                                self.set_next_state("Processing")
+                            else:
+                                print("Error: Received data is not a valid coordinate.")
+                                self.set_next_state("Idle")
+                        except json.JSONDecodeError:
+                            print("Error: Unable to decode message body as JSON.")
+                            self.set_next_state("Idle")
 
-            else:
-                print("No Message Received")
-                self.set_next_state("Idle")
+                    elif performative == "user_input" and msg.body == "breakdown":
+                        self.set_next_state("Breakdown")
+
+                    elif performative=="inform" and msg.body=="tasks are done":
+                        self.set_next_state("Dock")
+
+                else:
+                    print("No Message Received")
+                    self.set_next_state("Idle")
 
     class Processing(State):
         async def run(self):
@@ -145,13 +186,15 @@ class AMR1(Agent):
         fsm = self.AMRFSM()
         #All the States
         fsm.add_state(name="Ready", state=self.Ready(), initial=True)
+        fsm.add_state(name="waitingforjob", state=self.waitingforjob())
         fsm.add_state(name="Idle", state=self.Idle())
         fsm.add_state(name="Dock", state=self.Dock())
         fsm.add_state(name="Processing", state=self.Processing())
         fsm.add_state(name="breakdown", state=self.Breakdown())
 
         # Transition from one State to another State
-        fsm.add_transition(source="Ready", dest="Idle")
+        fsm.add_transition(source="Ready", dest="waitingforjob")
+        fsm.add_transition(source="waitingforjob", dest="Idle")
         fsm.add_transition(source="Idle", dest="Processing")
         fsm.add_transition(source="Processing", dest="Idle")
         fsm.add_transition(source="Idle", dest="breakdown")
