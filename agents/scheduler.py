@@ -20,20 +20,22 @@ class SchedulerAgent(Agent):
         machine_data = benchmarks.pinedo['machine_data']
         ptime_data = benchmarks.pinedo['ptime_data']
         amrs = 2
-        scheduler1 = JobShopScheduler(4, 3, amrs, 50, 0.7, 0.5, 100, machine_data, ptime_data)
+        jobs=3
+        machines=4
+        scheduler1 = JobShopScheduler(machines, jobs, amrs, 50, 0.7, 0.5, 100, machine_data, ptime_data)
         scheduler1.display_schedule = 0
         chromsome1 = scheduler1.GeneticAlgorithm()
-    
-        print("Machine Sequence", chromsome1.amr_machine_sequences)
-        print("Ptime Sequence", chromsome1.amr_ptime_sequences)
+        self.operation_list=scheduler1.operation_data
 
-        self.coordinates1 = chromsome1.amr_machine_sequences[0]  # Example list of coordinates
-        self.ptime1=chromsome1.amr_ptime_sequences[0]
-        print("AMR2 Machine sequence and it ptime", self.coordinates1,self.ptime1)
-        
-        self.coordinates2 = chromsome1.amr_machine_sequences[1]
-        self.ptime2=chromsome1.amr_ptime_sequences[1]
-        print("AMR3 Machine sequence and its ptime", self.coordinates2,self.ptime2)
+        amr1=chromsome1.amr_list[0]
+        amr2=chromsome1.amr_list[1]
+        amr_jobs=[amr1.completed_jobs,amr2.completed_jobs]
+
+        print("amr1",amr1.completed_jobs)
+        print("amr2",amr2.completed_jobs)
+        print("amr",amr_jobs)
+        print("Machine Sequence", self.operation_list)
+        print("Machine Sequence", self.operation_list[0])
 
         # Initialize state1 and state2
         self.state1 = "waiting for schedule"  # Added initialization for state1
@@ -41,6 +43,8 @@ class SchedulerAgent(Agent):
         
         self.index1 = 0  # Keep track of which coordinate to send
         self.index2 = 0 
+
+        self.JobAgents=["job1@jabber.fr","job2@jabber.fr","job3@jabber.fr"]
 
     class AMRFSM(FSMBehaviour):
         async def on_start(self):
@@ -51,9 +55,32 @@ class SchedulerAgent(Agent):
 
     class SchedulerBehaviour(State):
         async def run(self):
+            for index,element in enumerate(self.agent.JobAgents):
+                await asyncio.sleep(5)
+                msg=Message(to=element)
+                msg.set_metadata("performative","say")
+                msg.body="status"
+                await self.send(msg)
+                print("waiting for Job Agent response")
+                await asyncio.sleep(2)
+
+                msg1 = await self.receive(timeout=15)
+                if msg1:
+                    performative=msg1.get_metadata("performative")
+                    if performative=="say" and msg1.body=="waitingforjob":
+                        operation_and_ptime=self.agent.operation_list[index]
+                        msg=Message(to=element)
+                        msg.set_metadata("performative","inform")
+                        msg.body = json.dumps(operation_and_ptime)
+                        await self.send(msg)
+            await asyncio.sleep(2)
+            self.set_next_state("RobotRegister")
+
+    class RobotRegister(State):
+        async def run(self):
             x=True
+            self.robots = []
             while x==True:
-                self.robots = []
                 msg = await self.receive(timeout=15)
                 if msg:
                     performative = msg.get_metadata("performative")
@@ -64,58 +91,19 @@ class SchedulerAgent(Agent):
                         msg1.body = "Registered"
                         await self.send(msg1)
                         print(msg.body, "successfully registered")
-
-                    elif performative == "robot2@jabber.fr" and msg.body == "Idle":
-                        point1 = self.agent.coordinates1[self.agent.index1]  # Access agent's coordinates
-                        time1 = self.agent.ptime1[self.agent.index1]
-                        data1=[point1,time1]
-                        msg = Message(to="robot2@jabber.fr")  # JID of the AMR2 agent
-                        msg.set_metadata("performative", "order")
-                        msg.body = json.dumps(data1)  # Convert the coordinate to JSON string
-                        await self.send(msg)
-                        print(f"Sending coordinate: {point1} to AMR2")
-                        # Update index or mark completion
-                        if self.agent.index1 < len(self.agent.coordinates1)-1:
-                            self.agent.index1 += 1
-                        else:
-                            complete1 = Message(to="robot2@jabber.fr")
-                            complete1.set_metadata("performative", "inform")
-                            complete1.body = "AMR2 tasks are done"
-                            self.agent.state1 = "Complete"
-                            await self.send(complete1)
-                            await asyncio.sleep(3)
-
-
-                    elif performative == "robot3@jabber.fr" and msg.body == "Idle":
-                        point2 = self.agent.coordinates2[self.agent.index2]  # Access agent's coordinates
-                        time2 = self.agent.ptime2[self.agent.index2]
-                        data2=[point2,time2]
-                        msg = Message(to="robot3@jabber.fr")  # JID of the AMR3 agent
-                        msg.set_metadata("performative", "order")
-                        msg.body = json.dumps(data2)  # Convert the coordinate to JSON string
-                        await self.send(msg) 
-                        print(f"Sending coordinate: {point2} to AMR3")                
-                        # Update index or mark completion
-                        if self.agent.index2 < len(self.agent.coordinates2)-1:
-                            self.agent.index2 += 1
-                        else:
-                            complete2 = Message(to="robot3@jabber.fr")
-                            complete2.set_metadata("performative", "inform")
-                            complete2.body = "AMR3 tasks are done"
-                            self.agent.state2 = "Complete"
-                            await self.send(complete2)
-                            await asyncio.sleep(3)
-
-
-                    # Check if both states are complete
-                    if self.agent.state1 == "Complete" and self.agent.state2 == "Complete":
-                        print("Both AMR tasks are complete.")
-                        x=False
-                        self.set_next_state("JobComplete")
-
+                        if len(self.robots)>=self.agent.amrs:
+                            x=False
                 else:
                     print("No response from AMR, will retry after some time.")
                     await asyncio.sleep(5)
+
+            for i,amr in enumerate(self.robots):
+                msg=Message(to=amr)
+                msg.set_metadata("performative", "order")
+                msg.body = json.dumps(self.agent.amr_jobs[i])
+                await self.send(msg)
+                await asyncio.sleep(3)
+            self.set_next_state("JobComplete")
 
     class JobComplete(State):
         async def run(self):
@@ -130,11 +118,16 @@ class SchedulerAgent(Agent):
 
         # All the States
         fsm.add_state(name="SchedulerBehaviour", state=self.SchedulerBehaviour(), initial=True)
+        fsm.add_state(name="RobotRegister", state=self.RobotRegister())
         fsm.add_state(name="JobComplete", state=self.JobComplete())
 
         # Transition from one State to another State
         fsm.add_transition(source="SchedulerBehaviour", dest="JobComplete")
+        fsm.add_transition(source="SchedulerBehaviour", dest="RobotRegister")
+        fsm.add_transition(source="RobotRegister", dest="SchedulerBehaviour")
+        fsm.add_transition(source="RobotRegister", dest="JobComplete")
         fsm.add_transition(source="JobComplete", dest="SchedulerBehaviour")
+        fsm.add_transition(source="JobComplete", dest="RobotRegister")
 
         self.add_behaviour(fsm)
 

@@ -22,8 +22,9 @@ class AMR2(Agent):
 
     class Ready(State):
         async def run(self):
+            await asyncio.sleep(8)
             print("AMR2 is Ready")
-            register = Message(to="Jobs@jabber.fr")
+            register = Message(to="scheduler@jabber.fr")
             register.set_metadata("performative", "Register")
             register.body = "robot2@jabber.fr"
             await self.send(register)  # Sending the register message
@@ -37,11 +38,11 @@ class AMR2(Agent):
 
     class Idle(State):
         async def run(self):
-            reply = Message(to="Jobs@jabber.fr")
+            reply = Message(to="scheduler@jabber.fr")
             reply.set_metadata("performative", "robot2@jabber.fr")
             reply.body = "Idle"
             await self.send(reply)
-            print("Sent Idle status to JobsAgent.")
+            print("Sent Idle status to Job Agent.")
             await asyncio.sleep(1)
             msg = await self.receive(timeout=10)
             if msg:
@@ -64,6 +65,7 @@ class AMR2(Agent):
                         self.set_next_state("Idle")
                 elif performative == "user_input" and msg.body == "breakdown":
                     self.set_next_state("Breakdown")
+
                 elif performative=="inform" and msg.body=="AMR2 tasks are done":
                     self.set_next_state("Dock")
             else:
@@ -74,53 +76,54 @@ class AMR2(Agent):
         async def run(self):
             print(f"State: Processing coordinates: {self.agent.machine}")
             print(f"State: Processing Time: {self.agent.ptime}")
+            await asyncio.sleep(self.agent.ptime + 2)
             self.set_next_state("Idle")
 
-            rclpy.init()
-            pose=self.agent.machine
-            navigator = BasicNavigator()
+            # rclpy.init()
+            # pose=self.agent.machine
+            # navigator = BasicNavigator()
 
-            m1 = [-3.32, 6.65]
-            m2 = [-3.38, 1.46]
-            m3 = [1.627, 6.459]
-            m4 = [1.681, 1.407]
-            loading_dock = [-6.69, 4.028]
-            unloading_dock = [3.52, 3.96]
+            # m1 = [-3.32, 6.65]
+            # m2 = [-3.38, 1.46]
+            # m3 = [1.627, 6.459]
+            # m4 = [1.681, 1.407]
+            # loading_dock = [-6.69, 4.028]
+            # unloading_dock = [3.52, 3.96]
 
-            poses = {
-                '0': m1,
-                '1': m2,
-                '2': m3,
-                '3': m4,
-                '-1': loading_dock,
-                '-2': unloading_dock
-            }
+            # poses = {
+            #     '0': m1,
+            #     '1': m2,
+            #     '2': m3,
+            #     '3': m4,
+            #     '-1': loading_dock,
+            #     '-2': unloading_dock
+            # }
 
-            goal_pose = PoseStamped()
-            goal_pose.header.frame_id = 'map'
-            goal_pose.header.stamp = navigator.get_clock().now().to_msg()
-            goal_pose.pose.position.x = poses[str(pose)][0]
-            goal_pose.pose.position.y = poses[str(pose)][1] 
-            goal_pose.pose.orientation.w = 1.0
+            # goal_pose = PoseStamped()
+            # goal_pose.header.frame_id = 'map'
+            # goal_pose.header.stamp = navigator.get_clock().now().to_msg()
+            # goal_pose.pose.position.x = poses[str(pose)][0]
+            # goal_pose.pose.position.y = poses[str(pose)][1] 
+            # goal_pose.pose.orientation.w = 1.0
 
-            navigator.goToPose(goal_pose)
+            # navigator.goToPose(goal_pose)
 
-            result = navigator.getResult()
-            if result == TaskResult.SUCCEEDED:
-                print(f"Going to Machine: {self.agent.machine}")
-                await asyncio.sleep(self.agent.ptime)  # Simulate processing for 5 seconds
-                print(f"Machine finished processing")
-                self.set_next_state("Idle")  # Return to Idle after processing
-            elif result == TaskResult.CANCELED:
-                print('Inspection of shelving was canceled. Returning to start...')
-                exit(1)
-            elif result == TaskResult.FAILED:
-                print('Inspection of shelving failed! Returning to start...')
+            # result = navigator.getResult()
+            # if result == TaskResult.SUCCEEDED:
+            #     print(f"Going to Machine: {self.agent.machine}")
+            #     await asyncio.sleep(self.agent.ptime)  # Simulate processing for 5 seconds
+            #     print(f"Machine finished processing")
+            #     self.set_next_state("Idle")  # Return to Idle after processing
+            # elif result == TaskResult.CANCELED:
+            #     print('Inspection of shelving was canceled. Returning to start...')
+            #     exit(1)
+            # elif result == TaskResult.FAILED:
+            #     print('Inspection of shelving failed! Returning to start...')
 
     class Breakdown(State):
         async def run(self):
             print("State: Breakdown. Sending JID of assistance agent...")
-            msg = Message(to="Jobs@jabber.fr")
+            msg = Message(to="scheduler@jabber.fr")
             msg.set_metadata("performative", "inform")
             msg.body = "Breakdown: please assist."
             await self.send(msg)
