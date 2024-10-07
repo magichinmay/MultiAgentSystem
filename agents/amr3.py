@@ -56,7 +56,8 @@ class AMR3(Agent):
 
     class waitingforjob(State):
         async def run(self):
-            my_job=await self.receive(timeout=15)
+            print("waitingforjob")
+            my_job=await self.receive(timeout=None)
             if my_job:
                 print("waiting for jobs")
                 performative = my_job.get_metadata("performative")
@@ -105,7 +106,7 @@ class AMR3(Agent):
                             print("Error: Unable to decode message body as JSON.")
                             self.set_next_state("Idle")
 
-                    elif performative == "user_input" and msg.body == "breakdown":
+                    elif performative == "user_input" and msg.body == "Breakdown":
                         self.set_next_state("Breakdown")
 
                     elif performative=="inform" and msg.body=="tasks are done":
@@ -190,16 +191,19 @@ class AMR3(Agent):
         fsm.add_state(name="Idle", state=self.Idle())
         fsm.add_state(name="Dock", state=self.Dock())
         fsm.add_state(name="Processing", state=self.Processing())
-        fsm.add_state(name="breakdown", state=self.Breakdown())
+        fsm.add_state(name="Breakdown", state=self.Breakdown())
 
         # Transition from one State to another State
+        fsm.add_transition(source="Ready", dest="Ready")
+        fsm.add_transition(source="waitingforjob", dest="Ready")
         fsm.add_transition(source="Ready", dest="waitingforjob")
         fsm.add_transition(source="waitingforjob", dest="Idle")
+        fsm.add_transition(source="waitingforjob", dest="waitingforjob")
         fsm.add_transition(source="Idle", dest="Processing")
         fsm.add_transition(source="Processing", dest="Idle")
-        fsm.add_transition(source="Idle", dest="breakdown")
-        fsm.add_transition(source="breakdown", dest="Idle")
-        fsm.add_transition(source="Processing", dest="breakdown")
+        fsm.add_transition(source="Idle", dest="Breakdown")
+        fsm.add_transition(source="Breakdown", dest="Idle")
+        fsm.add_transition(source="Processing", dest="Breakdown")
         fsm.add_transition(source="Idle", dest="Idle")
         fsm.add_transition(source="Idle", dest="Dock")
         fsm.add_transition(source="Dock", dest="Idle")
