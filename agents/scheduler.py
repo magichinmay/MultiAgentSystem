@@ -9,7 +9,7 @@ import time
 
 from aioxmpp import version, disco
 
-sys.path.insert(1, "/home/ubantu/mas_ws/src/MultiAgentSystem/JobShopGA")
+sys.path.insert(1, "/home/tarun/CustomMultibot/src/MultiAgentSystem/JobShopGA_withAMR")
 from JobShopScheduler import JobShopScheduler
 import benchmarks
 import distances
