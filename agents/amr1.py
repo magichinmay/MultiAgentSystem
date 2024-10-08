@@ -18,6 +18,14 @@ class AMR1(Agent):
             '1':"job2@jabber.fr",
             '2':"job3@jabber.fr"
         }
+        self.MachineAgents={
+            '0':"machine1@jabber.fr",
+            '1':"machine2@jabber.fr",
+            '2':"machine3@jabber.fr",
+            '3':"machine4@jabber.fr"
+        }
+        self.l=True
+        self.u=True
 
     class AMRFSM(FSMBehaviour):
         async def on_start(self):
@@ -40,13 +48,13 @@ class AMR1(Agent):
                 performative = msg1.get_metadata("performative")
                 if performative == "inform" and msg1.body == "Registered":
                     print("Successfully Registered")
-                    ask=Message(to="scheduler@jabber.fr")
-                    ask.set_metadata("performative", "ask")
-                    ask.body = "my job"
-                    print(ask.body)
-                    await self.send(ask)
-                    await asyncio.sleep(3)
-                    print("chaning state to waitingforjob")
+                    # ask=Message(to="scheduler@jabber.fr")
+                    # ask.set_metadata("performative", "ask")
+                    # ask.body = "my job"
+                    # print(ask.body)
+                    # await self.send(ask)
+                    # await asyncio.sleep(3)
+                    # print("chaning state to waitingforjob")
                     self.set_next_state("waitingforjob")
                 else:
                     print("Failed to register. Staying in Ready state.")
@@ -56,12 +64,35 @@ class AMR1(Agent):
 
     class waitingforjob(State):
         async def run(self):
-            print("waitingforjob")
+            rclpy.init()
+            while self.agent.l==True: 
+                ask=Message(to="loading@jabber.fr")
+                ask.set_metadata("performative", "ask")
+                ask.body = "my job"
+                print(ask.body)
+                await self.send(ask)
+                await asyncio.sleep(2)      
+                print("waitingforjob")
+                job=await self.receive(timeout=10)
+                if job:
+                    performative=job.get_metadata("performative")
+                    if performative=="say" and job.body=="goto_loading_dock":
+                        print("Going to Loading Dock")
+                        self.agent.machine = -1
+                        self.agent.ptime = 3
+                        self.set_next_state("Processing")
+
+                
+            ask=Message(to="loading@jabber.fr")
+            ask.set_metadata("performative", "ask")
+            ask.body = "readyforjob"
+            print(ask.body)
+            await self.send(ask)            
             my_job=await self.receive(timeout=None)
             if my_job:
                 print("waiting for jobs")
                 performative = my_job.get_metadata("performative")
-                if performative=="order":
+                if performative=="loading":
                     try:
                         job = json.loads(my_job.body)
                         if isinstance(job, list):
@@ -71,10 +102,10 @@ class AMR1(Agent):
                             self.set_next_state("Idle")
                         else:
                             print("Error: Received data is not a valid coordinate.")
-                            self.set_next_state("Idle")
+                            self.set_next_state("waitingforjob")
                     except json.JSONDecodeError:
                         print("Error: Unable to decode message body as JSON.")
-                        self.set_next_state("Idle")
+                        self.set_next_state("waitingforjob")
 
 
     class Idle(State):
@@ -94,6 +125,22 @@ class AMR1(Agent):
                             data2 = json.loads(msg.body)
                             machine=data2[0]
                             ptime=data2[1]
+                            MachineData=[index,ptime]
+
+                            askmachine = Message(to=self.agent.MachineAgents[str(machine)])
+                            askmachine.set_metadata("performative", "request") 
+                            askmachine.body = "canIcome"
+                            await self.send(askmachine)
+                            await asyncio.sleep(2)
+                            machine_reply=await self.receive(timeout=None)
+                            if machine_reply:
+                                performative=machine_reply.get_metadata("performative")
+                                if performative=="reply" and machine_reply.body=="Yes":
+                                    tellmachine=Message(to=machine_reply.sender)
+                                    tellmachine.set_metadata("performative","tell")
+                                    tellmachine.body=json.dumps(MachineData)
+                                    await self.send(tellmachine)
+
                             if isinstance(machine, int):
                                 print(f"Received coordinates: {machine}")
                                 self.agent.machine = machine
@@ -106,12 +153,8 @@ class AMR1(Agent):
                             print("Error: Unable to decode message body as JSON.")
                             self.set_next_state("Idle")
 
-                    elif performative == "user_input" and msg.body == "Breakdown":
-                        self.set_next_state("Breakdown")
-
                     elif performative=="inform" and msg.body=="tasks are done":
                         self.set_next_state("Dock")
-
                 else:
                     print("No Message Received")
                     self.set_next_state("Idle")
@@ -122,46 +165,55 @@ class AMR1(Agent):
             print(f"State: Processing Time: {self.agent.ptime}")
             await asyncio.sleep(self.agent.ptime + 2)
             self.set_next_state("Idle")
-            # rclpy.init()
-            # pose=self.agent.machine
-            # navigator = BasicNavigator()
+            rclpy.init()
+            pose=self.agent.machine
+            navigator = BasicNavigator()
 
-            # m1 = [-3.32, 6.65]
-            # m2 = [-3.38, 1.46]
-            # m3 = [1.627, 6.459]
-            # m4 = [1.681, 1.407]
-            # loading_dock = [-6.69, 4.028]
-            # unloading_dock = [3.52, 3.96]
+            m1 = [-3.32, 6.65]
+            m2 = [-3.38, 1.46]
+            m3 = [1.627, 6.459]
+            m4 = [1.681, 1.407]
+            loading_dock = [-6.69, 4.028]
+            unloading_dock = [3.52, 3.96]
 
-            # poses = {
-            #     '0': m1,
-            #     '1': m2,
-            #     '2': m3,
-            #     '3': m4,
-            #     '-1': loading_dock,
-            #     '-2': unloading_dock
-            # }
+            poses = {
+                '0': m1,
+                '1': m2,
+                '2': m3,
+                '3': m4,
+                '-1': loading_dock,
+                '-2': unloading_dock
+            }
 
-            # goal_pose = PoseStamped()
-            # goal_pose.header.frame_id = 'map'
-            # goal_pose.header.stamp = navigator.get_clock().now().to_msg()
-            # goal_pose.pose.position.x = poses[str(pose)][0]
-            # goal_pose.pose.position.y = poses[str(pose)][1] 
-            # goal_pose.pose.orientation.w = 1.0
+            goal_pose = PoseStamped()
+            goal_pose.header.frame_id = 'map'
+            goal_pose.header.stamp = navigator.get_clock().now().to_msg()
+            goal_pose.pose.position.x = poses[str(pose)][0]
+            goal_pose.pose.position.y = poses[str(pose)][1] 
+            goal_pose.pose.orientation.w = 1.0
 
-            # navigator.goToPose(goal_pose)
+            navigator.goToPose(goal_pose)
 
-            # result = navigator.getResult()
-            # if result == TaskResult.SUCCEEDED:
-            #     print(f"Going to Machine: {self.agent.machine}")
-            #     await asyncio.sleep(self.agent.ptime)  # Simulate processing for 5 seconds
-            #     print(f"Machine finished processing")
-            #     self.set_next_state("Idle")  # Return to Idle after processing
-            # elif result == TaskResult.CANCELED:
-            #     print('Inspection of shelving was canceled. Returning to start...')
-            #     exit(1)
-            # elif result == TaskResult.FAILED:
-            #     print('Inspection of shelving failed! Returning to start...')
+            result = navigator.getResult()
+            if result == TaskResult.SUCCEEDED:
+                if self.agent.machine==-1:
+                    print("Reached Loading Dock")
+                    self.agent.l=False
+                    self.set_next_state("waitingforjob")
+                elif self.agent.machine==-2:
+                    print("Reached Unloading Dock")
+                    self.agent.u==False
+                    self.set_next_state("Dock")
+                else:
+                    print(f"Going to Machine: {self.agent.machine}")
+                    await asyncio.sleep(self.agent.ptime)  # Simulate processing for 5 seconds
+                    print(f"Machine finished processing")
+                    self.set_next_state("Idle")  # Return to Idle after processing
+            elif result == TaskResult.CANCELED:
+                print('Inspection of shelving was canceled. Returning to start...')
+                exit(1)
+            elif result == TaskResult.FAILED:
+                print('Inspection of shelving failed! Returning to start...')
             
 
     class Breakdown(State):
