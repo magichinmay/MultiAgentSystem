@@ -18,14 +18,27 @@ class AMR1(Agent):
             '1':"job2@jabber.fr",
             '2':"job3@jabber.fr"
         }
+        self.RRJobAgents={
+            "job1@jabber.fr":'0',
+            "job2@jabber.fr":'1',
+            "job3@jabber.fr":'2'
+        }
         self.MachineAgents={
             '0':"machine1@jabber.fr",
             '1':"machine2@jabber.fr",
             '2':"machine3@jabber.fr",
             '3':"machine4@jabber.fr"
         }
+        self.RMachineAgents={
+            "machine1@jabber.fr":'0',
+            "machine2@jabber.fr":'1',
+            "machine3@jabber.fr":'2',
+            "machine4@jabber.fr":'3'
+        }
         self.l=True
         self.u=True
+        self.i=True
+        self.t=True
 
     class AMRFSM(FSMBehaviour):
         async def on_start(self):
@@ -110,53 +123,63 @@ class AMR1(Agent):
 
     class Idle(State):
         async def run(self):
-            for index in self.agent.jobs:
-                reply = Message(to=self.agent.JobsAgents[index])
-                reply.set_metadata("performative", "request")
-                reply.body = "Idle"
-                await self.send(reply)
-                print("Sent Idle status to Job Agent.")
-                await asyncio.sleep(1)
-                msg = await self.receive(timeout=10)
-                if msg:
-                    performative = msg.get_metadata("performative")
-                    if performative == "order":
-                        try:
-                            data2 = json.loads(msg.body)
-                            machine=data2[0]
-                            ptime=data2[1]
-                            MachineData=[index,ptime]
 
-                            askmachine = Message(to=self.agent.MachineAgents[str(machine)])
-                            askmachine.set_metadata("performative", "request") 
-                            askmachine.body = "canIcome"
-                            await self.send(askmachine)
-                            await asyncio.sleep(2)
-                            machine_reply=await self.receive(timeout=None)
-                            if machine_reply:
-                                performative=machine_reply.get_metadata("performative")
-                                if performative=="reply" and machine_reply.body=="Yes":
-                                    tellmachine=Message(to=machine_reply.sender)
-                                    tellmachine.set_metadata("performative","tell")
-                                    tellmachine.body=json.dumps(MachineData)
-                                    await self.send(tellmachine)
+            while self.agent.i==True:
+                for index in self.agent.jobs:
+                    reply = Message(to=self.agent.JobsAgents[index])
+                    reply.set_metadata("performative", "request")
+                    reply.body = "Idle"
+                    await self.send(reply)
+                    print("Sent Idle status to Job Agent.")
+                    await asyncio.sleep(1)
+                    msg = await self.receive(timeout=10)
+                    if msg:
+                        performative = msg.get_metadata("performative")
+                        if performative == "order":
+                            try:
+                                data2 = json.loads(msg.body)
+                                machine=data2[0]
+                                ptime=data2[1]
+                                MachineData=[self.agent.RRJobAgents[self.agent.JobsAgents[index]],ptime]
 
-                            if isinstance(machine, int):
-                                print(f"Received coordinates: {machine}")
-                                self.agent.machine = machine
-                                self.agent.ptime = ptime
-                                self.set_next_state("Processing")
-                            else:
-                                print("Error: Received data is not a valid coordinate.")
+                                askmachine = Message(to=self.agent.MachineAgents[str(machine)])
+                                askmachine.set_metadata("performative", "request") 
+                                askmachine.body = "canIcome"
+                                await self.send(askmachine)
+                                await asyncio.sleep(2)
+                                machine_reply=await self.receive(timeout=None)
+                                if machine_reply:
+                                    performative=machine_reply.get_metadata("performative")
+                                    if performative=="reply" and machine_reply.body=="Yes":
+                                        self.agent.i=False
+                                        self.agent.machine = self.agent.RMachineAgents[self.agent.MachineAgents[index]]
+                                        self.agent.ptime = ptime
+                                        self.set_next_state("Processing")
+                                else:
+                                     self.set_next_state("Idle")     
+                            except json.JSONDecodeError:
+                                print("Error: Unable to decode message body as JSON.")
                                 self.set_next_state("Idle")
-                        except json.JSONDecodeError:
-                            print("Error: Unable to decode message body as JSON.")
-                            self.set_next_state("Idle")
 
-                    elif performative=="inform" and msg.body=="tasks are done":
-                        self.set_next_state("Dock")
+                        elif performative=="inform" and msg.body=="tasks are done":
+                            self.set_next_state("Dock")
+                    else:
+                        print("No Message Received")
+                        self.set_next_state("Idle")
+
+            while self.agent.t==False:            
+                tellmachine=Message(to=machine_reply.sender)
+                tellmachine.set_metadata("performative","tell")
+                tellmachine.body=json.dumps(MachineData)
+                await self.send(tellmachine)
+
+                if isinstance(machine, int):
+                    print(f"Received coordinates: {machine}")
+                    self.agent.machine = machine
+                    self.agent.ptime = ptime
+                    self.set_next_state("Processing")
                 else:
-                    print("No Message Received")
+                    print("Error: Received data is not a valid coordinate.")
                     self.set_next_state("Idle")
 
     class Processing(State):
