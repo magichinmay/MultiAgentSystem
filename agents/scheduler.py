@@ -94,6 +94,7 @@ class SchedulerAgent(Agent):
                 self.agent.machine_job_set.append(machine_sublist)
                 
             print("machine_job_set",self.agent.machine_job_set)
+            self.set_next_state("Send_Schedule")
 
 
 
@@ -139,20 +140,21 @@ class SchedulerAgent(Agent):
                         await self.send(Jmsg2)
             await asyncio.sleep(4)
 
-            #Sends Job List to Loading Dock Agent
-            Lmsg=Message(to="loading@jabber.fr")
-            Lmsg.set_metadata("performative","say")
-            Lmsg.body=("status")
-            await self.send(Lmsg)
-            await asyncio.sleep(2)
-            Lmsg1 = await self.receive(timeout=20)
-            if Lmsg1:
-                performative=Lmsg1.get_metadata("performative")
-                if performative=="say" and Lmsg1.body=="waitingforjob":
-                    Lmsg2=Message(to="loading@jabber.fr")
-                    Lmsg2.set_metadata("performative","inform")
-                    Lmsg2.body=json.dumps(self.agent.job_sets)
-                    await self.send(Lmsg2)
+            # #Sends Job List to Loading Dock Agent
+            # Lmsg=Message(to="loadingdock@jabber.fr")
+            # Lmsg.set_metadata("performative","say")
+            # Lmsg.body=("status")
+            # await self.send(Lmsg)
+            # await asyncio.sleep(2)
+            # Lmsg1 = await self.receive(timeout=20)
+            # if Lmsg1:           
+            #     performative=Lmsg1.get_metadata("performative")
+            #     if performative=="say" and Lmsg1.body=="waitingforjob":
+            Lmsg2=Message(to="loadingdock@jabber.fr")
+            Lmsg2.set_metadata("performative","Job_sets")
+            Lmsg2.body=json.dumps(self.agent.job_sets)
+            print(self.agent.job_sets)
+            await self.send(Lmsg2)
             await asyncio.sleep(4)
 
             #Sends all the Job's opeartion detail to each Machine Agent
