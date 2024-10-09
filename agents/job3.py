@@ -8,10 +8,6 @@ import os
 
 from aioxmpp import version, disco
 
-sys.path.insert(1, "/home/ubantu/mas_ws/src/MultiAgentSystem/JobShopGA")
-from JobShopScheduler import JobShopScheduler
-import benchmarks
-import distances
 
 class JobAgent3(Agent):
     def __init__(self, jid, password):

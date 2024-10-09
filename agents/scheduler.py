@@ -9,7 +9,15 @@ import time
 
 from aioxmpp import version, disco
 
-sys.path.insert(1, "/home/ubantu/mas_ws/src/MultiAgentSystem/JobShopGA")
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Construct the path to the JobShopGA_withAMR directory
+jobshop_ga_dir = os.path.join(current_dir, '..', 'JobShopGA_withAMR')
+
+# Add this directory to sys.path
+sys.path.insert(0, jobshop_ga_dir)
+
+# Now you can import from the JobShopGA_withAMR directory
 from JobShopScheduler import JobShopScheduler
 import benchmarks
 import distances
