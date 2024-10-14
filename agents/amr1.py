@@ -149,7 +149,7 @@ class AMR1(Agent):
                                 askmachine.set_metadata("performative", "ask_machine") 
                                 askmachine.body = "canIcome"
                                 await self.send(askmachine)
-                                await asyncio.sleep(2)
+                                await asyncio.sleep(4)
                                 machine_reply=await self.receive(timeout=None)
                                 if machine_reply:
                                     performative=machine_reply.get_metadata("performative")
@@ -174,7 +174,8 @@ class AMR1(Agent):
                         print("No Message Received")
                         self.set_next_state("Idle")
 
-                while self.agent.t==False:            
+                while self.agent.t==False:
+                    await asyncio.sleep(2)            
                     tellmachine=Message(to=machine_reply.sender)
                     tellmachine.set_metadata("performative","tell")
                     tellmachine.body=json.dumps(MachineData)
