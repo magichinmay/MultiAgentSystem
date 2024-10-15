@@ -37,12 +37,14 @@ class AMR1(Agent):
             "machine3@jabber.fr":'2',
             "machine4@jabber.fr":'3'
         }
-        self.w=True
-        self.l=True
+        self.waiting_for_job=True
+        self.going_to_loading=True
+        self.loading=False
         self.u=True
-        self.i=True
-        self.t=True
+        self.idle=True
+        self.travelling=True
         self.check_for_breakdown=False
+        self.Mdock=False
 
     class AMRFSM(FSMBehaviour):
         async def on_start(self):
@@ -75,7 +77,7 @@ class AMR1(Agent):
     class waitingfor_jobset(State):
         async def run(self):
             rclpy.init()
-            while self.agent.w==True: 
+            while self.agent.waiting_for_job==True: 
                 ask=Message(to="loadingdock@jabber.fr")
                 ask.set_metadata("performative", "ask")
                 ask.body = "my_job_set"
@@ -93,7 +95,7 @@ class AMR1(Agent):
                                 print(f"Received coordinates: {my_job}")
                                 job = [str(element) for element in my_job]
                                 self.agent.remainingjobs=deque(my_job)
-                                self.agent.w=False
+                                self.agent.waiting_for_job=False
                                 self.set_next_state("loading")
                             else:
                                 print("Error: Received data is not a valid coordinate.")
@@ -103,16 +105,15 @@ class AMR1(Agent):
                             self.set_next_state("waitingfor_jobset")
 
     
-    class loading(State):
+    class Loading(State):
         async def run(self):
-            while self.agent.l==True:    
+            if self.agent.going_to_loading==True:    
                 print("Going to Loading Dock")
                 self.agent.machine = -1
                 self.agent.ptime = 3
-                self.agent.l=False
                 self.set_next_state("Processing")
 
-            while self.agent.l==False:        
+            if self.agent.loading==True:        
                 ask=Message(to="loadingdock@jabber.fr")
                 ask.set_metadata("performative", "ask")
                 ask.body = "load_the_job"
@@ -139,7 +140,7 @@ class AMR1(Agent):
 
             else:
                 if self.agent.remainingjobs:
-                    while self.agent.i==True:
+                    while self.agent.idle==True:
                         reply = Message(to=self.agent.JobsAgents[self.agent.remainingjobs[0]])
                         reply.set_metadata("performative", "ask_for_op")
                         reply.body = "Idle"
@@ -166,11 +167,13 @@ class AMR1(Agent):
                                     if machine_reply:
                                         performative=machine_reply.get_metadata("performative")
                                         if performative=="machine_reply" and machine_reply.body=="Yes":
-                                            self.agent.i=False
+                                            self.agent.idle=False
                                             #checkout for error
                                             self.agent.machine = self.agent.RMachineAgents[self.agent.MachineAgents[self.agent.remainingjobs[0]]]
                                             self.agent.ptime = ptime
                                             self.set_next_state("Processing")
+                                        elif performative=="machine_reply" and machine_reply=="Come to Machine Dock":
+                                            self.agent.dock=True
                                     else:
                                         self.set_next_state("Idle")     
                                 except json.JSONDecodeError:
@@ -183,16 +186,11 @@ class AMR1(Agent):
                                 self.agent.machine = -2
                                 self.agent.ptime = 3
                                 self.set_next_state("Processing")
-                                                            
-                                # if self.agent.remainingjobs==None:
-                                #     self.set_next_state("Dock")
-                                # else:
-                                #     self.set_next_state("Idle")
                         else:
                             print("No Message Received")
                             self.set_next_state("Idle")
 
-                    while self.agent.t==False:
+                    while self.agent.travelling==False:
                         await asyncio.sleep(2)            
                         tellmachine=Message(to=machine_reply.sender)
                         tellmachine.set_metadata("performative","waiting_for_machine_to_process")
@@ -204,11 +202,25 @@ class AMR1(Agent):
                             performative=machine_finish.get_metadata("performative")
                             if performative=="machine_finish" and machine_finish.body=="machingdone":
                                 print("Maching Processing completed")
-                                self.agent.t=True
-                                self.agent.i=True
+                                self.agent.travelling=True
+                                self.agent.idle=True
                                 self.set_next_state("Idle")
                         else:
                             self.set_next_state("Idle")
+
+                    while self.agent.dock==True:
+                        msg2=await self.receive(timeout=None)
+                        if msg2:
+                            performative=msg2.get_metadata("performative")
+                            if performative=="machine_reply" and msg2.body=="Yes":
+                                self.agent.idle=False
+                                self.agent.dock=False
+                                #checkout for error
+                                self.agent.machine = self.agent.RMachineAgents[self.agent.MachineAgents[self.agent.remainingjobs[0]]]
+                                self.agent.ptime = ptime
+                                self.set_next_state("Processing")
+
+
 
 
 
@@ -261,8 +273,9 @@ class AMR1(Agent):
             if result == TaskResult.SUCCEEDED:
                 if self.agent.machine==-1:
                     print("Reached Loading Dock")
-                    self.agent.l=False
-                    self.set_next_state("waitingfor_jobset")
+                    self.agent.going_to_loading=False
+                    self.agent.loading=True
+                    self.set_next_state("loading")
                 elif self.agent.machine==-2:
                     print("Reached Unloading Dock")
                     self.agent.check_for_breakdown=True
@@ -272,7 +285,7 @@ class AMR1(Agent):
                         self.set_next_state("Idle")
                 else:
                     print(f"Reached Machine: {self.agent.machine}") 
-                    self.agent.t=False
+                    self.agent.travelling=False
                     self.set_next_state("Idle")  # Return to Idle after processing
             elif result == TaskResult.CANCELED:
                 print('Inspection of shelving was canceled. Returning to start...')
@@ -305,7 +318,7 @@ class AMR1(Agent):
         #All the States
         fsm.add_state(name="Ready", state=self.Ready(), initial=True)
         fsm.add_state(name="waitingfor_jobset", state=self.waitingfor_jobset())
-        fsm.add_state(name="loading", state=self.loading())
+        fsm.add_state(name="loading", state=self.Loading())
         fsm.add_state(name="Idle", state=self.Idle())
         fsm.add_state(name="Dock", state=self.Dock())
         fsm.add_state(name="Processing", state=self.Processing())
@@ -320,6 +333,8 @@ class AMR1(Agent):
         fsm.add_transition(source="waitingfor_jobset", dest="loading")
 
         fsm.add_transition(source="loading", dest="loading")
+        fsm.add_transition(source="Processing", dest="loading")
+        fsm.add_transition(source="loading", dest="Processing")
         fsm.add_transition(source="loading", dest="Idle")
 
         fsm.add_transition(source="Idle", dest="Idle")

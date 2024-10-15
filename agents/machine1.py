@@ -23,20 +23,28 @@ class MachineAgent(Agent):
         async def run(self):
             print(f"{self.agent.name}: In IDLE state")
             # Wait for an incoming message with job number and AMR number
-            msg = await self.receive(timeout=float(inf))
-            if msg:
-                performative = msg.get_metadata("performative")
-                if performative == "ask_machine" and msg.body=="canIcome":
-                    self.agent.amr=msg.sender
-                    reply = Message(to=msg.sender)
-                    reply.set_metadata("performative", "machine_reply")
-                    reply.body = "Yes"
-                    await self.send(reply)
-                    self.set_next_state(WAITING)
+            if self.agent.dock_amr==None:
+                msg = await self.receive(timeout=float(inf))
+                if msg:
+                    performative = msg.get_metadata("performative")
+                    if performative == "ask_machine" and msg.body=="canIcome":
+                        self.agent.amr=msg.sender
+                        reply = Message(to=msg.sender)
+                        reply.set_metadata("performative", "machine_reply")
+                        reply.body = "Yes"
+                        await self.send(reply)
+                        self.set_next_state(WAITING)
+                else:
+                    print(f"{self.agent.name}: No message received, staying in IDLE state")
+                    self.set_next_state(IDLE)
+                    # The state machine will automatically go back to IDLE after the timeout
             else:
-                print(f"{self.agent.name}: No message received, staying in IDLE state")
-                self.set_next_state(IDLE)
-                # The state machine will automatically go back to IDLE after the timeout
+                call_dock_amr=Message(to=self.agent.dock_amr)
+                call_dock_amr.set_metadata("performative", "machine_reply")
+                call_dock_amr.body="Yes"
+                await self.send(call_dock_amr)
+                self.set_next_state(WAITING)
+
     
     class Waiting(State):
         async def run(self):
@@ -87,6 +95,7 @@ class MachineAgent(Agent):
         self.sender_jid = None
         self.ptime = None
         self.amr=None
+        self.dock_amr=None
         
         # Initialize the state machine
         fsm = self.MachineBehaviour()

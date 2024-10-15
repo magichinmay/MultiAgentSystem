@@ -24,17 +24,21 @@ class LoadingDockAgent(Agent):
 
     class InitState(State):
         async def run(self):
-            print("INIT state: Receiving job sets...")
-            msg = await self.receive(timeout=10)  # Wait for the job list
-            if msg:
-                if msg.get_metadata("performative") == "Job_sets":
+            print("INIT state: Waiting to receive job sets...")
+            
+            msg = None
+            while msg is None:  # Keep waiting until a message is received
+                msg = await self.receive(timeout=None)
+                await asyncio.sleep(5)  # Wait indefinitely for the job list
+                if msg and msg.get_metadata("performative") == "Job_sets":
                     job_list = json.loads(msg.body)
                     self.agent.remaining_job_sets = deque(job_list)
                     print(f"Received job sets: {self.agent.remaining_job_sets}")
                     self.set_next_state(IDLE)
-            else:
-                print("No job sets received.")
-                self.set_next_state(INIT)
+                    return  # Exit after setting the next state
+                else:
+                    print("No valid job sets received, retrying...")
+
 
     class IdleState(State):
         async def run(self):

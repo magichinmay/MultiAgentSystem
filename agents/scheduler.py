@@ -48,7 +48,7 @@ class SchedulerAgent(Agent):
         async def run(self):
             start_time_schedule = time.time()  # Record the start time
             start_time_reschedule = time.time()  # Record the start time
-            timeout_duration = 24  # Total time to keep the scheduler open
+            timeout_duration = 48  # Total time to keep the scheduler open
 
             if self.agent.open_for_reschedule==False:
                 print("Scheduler open for Registration")
@@ -123,7 +123,7 @@ class SchedulerAgent(Agent):
 
                 self.agent.machine_job_set.append(machine_sublist)
             
-            self.agent.scmax=chromsome1.cmax
+            self.agent.scmax=chromsome1.Cmax
             print("machine_job_set",self.agent.machine_job_set)
             self.set_next_state("Send_Schedule")
 

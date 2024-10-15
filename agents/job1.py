@@ -18,6 +18,8 @@ class JobAgent1(Agent):
 
         self.index = 0  # Keep track of which coordinate to send
         self.data=0
+        self.x=True
+        self.y=True
 
     class AMRFSM(FSMBehaviour):
         async def on_start(self):
@@ -28,11 +30,9 @@ class JobAgent1(Agent):
 
     class waitingforjob(State):
         async def run(self):
-            print("waiting for jobs")
-            x=True
-            while x==True:
+            print("waiting for jobs")  
+            while self.agent.x==True:
                 self.robots = []
-                
                 msg = await self.receive(timeout=15)
                 if msg:
                     performative = msg.get_metadata("performative")
@@ -48,7 +48,7 @@ class JobAgent1(Agent):
                             self.agent.data = json.loads(msg.body)
                             if isinstance(self.agent.data, list):
                                 print(f"Received Operations: {self.agent.data}")
-                                x=False
+                                self.agent.x=False
                                 self.set_next_state("sendingcoordinates")
                             else:
                                 print("Error: Received data is not a valid coordinate.")
@@ -63,8 +63,8 @@ class JobAgent1(Agent):
     class sendingcoordinates(State):
         async def run(self):
             print("Changing state to sendingcoordinates")
-            y=True
-            while y==True:
+            
+            while self.agent.y==True:
                 job = await self.receive(timeout=None)
                 if job:
                     performative = job.get_metadata("performative")
@@ -74,7 +74,7 @@ class JobAgent1(Agent):
                         coordinates=self.agent.data[self.agent.index]
                         msg.body = json.dumps(coordinates)
                         await self.send(msg)
-                        print(f"Sending coordinate: {coordinates} to AMR1")
+                        print(f"Sending coordinate: {coordinates} to AMR")
                     # Update index or mark completion
                     if self.agent.index < len(self.agent.data)-1:
                         self.agent.index += 1
@@ -89,7 +89,7 @@ class JobAgent1(Agent):
                 # Check if both states are complete
                 if self.agent.state == "Complete" :
                     print("Both AMR tasks are complete.")
-                    y=False
+                    self.agent.y=False
                     self.set_next_state("JobComplete")
 
     class JobComplete(State):
