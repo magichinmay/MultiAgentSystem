@@ -8,6 +8,7 @@ from math import inf
 # States
 IDLE = "IDLE"
 PROCESSING = "PROCESSING"
+WAITING="WAITING"
 
 class MachineAgent(Agent):
     
@@ -24,29 +25,41 @@ class MachineAgent(Agent):
             # Wait for an incoming message with job number and AMR number
             msg = await self.receive(timeout=float(inf))
             if msg:
-                try:
-                    print(f"{self.agent.name}: Received job: {msg.body}")
-                    job_amr_data = json.loads(msg.body)  # Ensure msg.body is valid JSON
-                    job_number = job_amr_data[0]
-                    ptime = job_amr_data[1]
-                    
-                    # Store the received job and AMR data in a variable
-                    self.agent.currently_processed = (job_number, ptime)
-                    
-                    # Set the sender's jid to respond after processing
-                    self.agent.sender_jid = str(msg.sender)
-                    self.agent.ptime = ptime
-                    
-                    # Transition to the PROCESSING state
-                    self.set_next_state(PROCESSING)
-                except (json.JSONDecodeError, IndexError) as e:
-                    print(f"{self.agent.name}: Error processing message: {e}")
-                    # Optionally, you can log the error or take further action
+                performative = msg.get_metadata("performative")
+                if performative == "ask_machine" and msg.body=="canIcome":
+                    self.agent.amr=msg.sender
+                    reply = Message(to=msg.sender)
+                    reply.set_metadata("performative", "machine_reply")
+                    reply.body = "Yes"
+                    await self.send(reply)
+                    self.set_next_state(WAITING)
             else:
                 print(f"{self.agent.name}: No message received, staying in IDLE state")
                 self.set_next_state(IDLE)
                 # The state machine will automatically go back to IDLE after the timeout
     
+    class Waiting(State):
+        async def run(self):
+            print("waiting for amr")
+            msg1 = await self.receive(timeout=float(inf))
+            if msg1:
+                performative = msg1.get_metadata("performative")
+                if performative == "ask_machine" and msg1.body=="canIcome":
+                    reply = Message(to=msg1.sender)
+                    self.agent.dock_amr=msg1.sender
+                    reply.set_metadata("performative", "machine_reply")
+                    reply.body = "Come to Machine Dock"
+                    await self.send(reply)
+                    self.set_next_state(WAITING)
+                elif performative == "waiting_for_machine_to_process":
+                    machining_data=json.loads(msg1.body)
+                    self.agent.currently_processed=machining_data[0]
+                    self.agent.ptime=machining_data[1]
+                    self.set_next_state(PROCESSING)
+
+
+
+
     class ProcessingState(State):
         async def run(self):
             print(f"{self.agent.name}: In PROCESSING state")
@@ -56,7 +69,8 @@ class MachineAgent(Agent):
             await asyncio.sleep(self.agent.ptime)
             
             # After processing, send a "Processing complete" message back to the sender
-            response = Message(to=self.agent.sender_jid)
+            response = Message(to=self.agent.amr)
+            response.set_metadata("performative", "machine_reply")
             response.body = "Processing complete"
             await self.send(response)
             
@@ -72,10 +86,12 @@ class MachineAgent(Agent):
         self.currently_processed = None
         self.sender_jid = None
         self.ptime = None
+        self.amr=None
         
         # Initialize the state machine
         fsm = self.MachineBehaviour()
         fsm.add_state(name=IDLE, state=self.IdleState(), initial=True)
+        fsm.add_state(name=WAITING, state=self.Waiting())
         fsm.add_state(name=PROCESSING, state=self.ProcessingState())
         
         fsm.add_transition(source=IDLE, dest=PROCESSING)
@@ -89,23 +105,13 @@ class MachineAgent(Agent):
 async def main():
     # Create and start the agents
     machine1 = MachineAgent("machine1@jabber.fr", "changeme")
-    machine2 = MachineAgent("machine2@jabber.fr", "changeme")
-    
     await machine1.start()
-    await machine2.start()
 
     try:
         while machine1.is_alive():
             await asyncio.sleep(1)
     except KeyboardInterrupt:
         await machine1.stop()
-
-    try:
-        while machine2.is_alive():
-            await asyncio.sleep(1)
-    except KeyboardInterrupt:
-        await machine2.stop()
-
 
 # Run the main function using asyncio
 if __name__ == "__main__":

@@ -42,6 +42,7 @@ class AMR1(Agent):
         self.u=True
         self.i=True
         self.t=True
+        self.check_for_breakdown=False
 
     class AMRFSM(FSMBehaviour):
         async def on_start(self):
@@ -110,84 +111,103 @@ class AMR1(Agent):
                 self.agent.ptime = 3
                 self.agent.l=False
                 self.set_next_state("Processing")
-                    
-            ask=Message(to="loadingdock@jabber.fr")
-            ask.set_metadata("performative", "ask")
-            ask.body = "load_the_job"
-            print(ask.body)
-            await self.send(ask)            
-            my_job=await self.receive(timeout=None)
-            if my_job:
-                print("waiting for jobs")
-                performative = my_job.get_metadata("performative")
-                if performative=="loading" and my_job.body=="loading_completed":
-                    print("Job Loading Completed")
-                    self.set_next_state("Idle")
+
+            while self.agent.l==False:        
+                ask=Message(to="loadingdock@jabber.fr")
+                ask.set_metadata("performative", "ask")
+                ask.body = "load_the_job"
+                print(ask.body)
+                await self.send(ask)            
+                my_job=await self.receive(timeout=None)
+                if my_job:
+                    print("waiting for jobs")
+                    performative = my_job.get_metadata("performative")
+                    if performative=="loading" and my_job.body=="loading_completed":
+                        print("Job Loading Completed")
+                        self.set_next_state("Idle")
 
 
     class Idle(State):
         async def run(self):
-            if self.agent.remainingjobs:
-                while self.agent.i==True:
-                    reply = Message(to=self.agent.JobsAgents[self.agent.remainingjobs[0]])
-                    reply.set_metadata("performative", "ask_for_op")
-                    reply.body = "Idle"
-                    await self.send(reply)
-                    print("Sent Idle status to Job Agent.")
-                    await asyncio.sleep(1)
-                    msg = await self.receive(timeout=10)
-                    if msg:
-                        performative = msg.get_metadata("performative")
-                        if performative == "job_orders":
-                            try:
-                                data2 = json.loads(msg.body)
-                                machine=data2[0]
-                                ptime=data2[1]
-                                MachineData=[self.agent.RRJobAgents[self.agent.JobsAgents[self.agent.remainingjobs[0]]],ptime]
-                                print(f"Received coordinates: {machine}")
-                                askmachine = Message(to=self.agent.MachineAgents[str(machine)])
-                                askmachine.set_metadata("performative", "ask_machine") 
-                                askmachine.body = "canIcome"
-                                await self.send(askmachine)
-                                await asyncio.sleep(4)
-                                machine_reply=await self.receive(timeout=None)
-                                if machine_reply:
-                                    performative=machine_reply.get_metadata("performative")
-                                    if performative=="machine_reply" and machine_reply.body=="Yes":
-                                        self.agent.i=False
-                                        #checkout for error
-                                        self.agent.machine = self.agent.RMachineAgents[self.agent.MachineAgents[self.agent.remainingjobs[0]]]
-                                        self.agent.ptime = ptime
-                                        self.set_next_state("Processing")
-                                else:
-                                     self.set_next_state("Idle")     
-                            except json.JSONDecodeError:
-                                print("Error: Unable to decode message body as JSON.")
+            if self.agent.check_for_breakdown==True:
+                print("Checking for any Breakdown issue")
+                breakdown_msg=await self.receive(timeout=20)
+                if breakdown_msg:
+                    performative = breakdown_msg.get_metadata("performative")
+                    if performative=="user_input" and breakdown_msg.body=="Breakdown":
+                        self.set_next_state("Breakdown")
+
+            else:
+                if self.agent.remainingjobs:
+                    while self.agent.i==True:
+                        reply = Message(to=self.agent.JobsAgents[self.agent.remainingjobs[0]])
+                        reply.set_metadata("performative", "ask_for_op")
+                        reply.body = "Idle"
+                        await self.send(reply)
+                        print("Sent Idle status to Job Agent.")
+                        await asyncio.sleep(1)
+                        msg = await self.receive(timeout=10)
+                        if msg:
+                            performative = msg.get_metadata("performative")
+                            if performative == "job_orders":
+                                try:
+                                    data2 = json.loads(msg.body)
+                                    machine=data2[0]
+                                    ptime=data2[1]
+                                    # MachineData=[self.agent.RRJobAgents[self.agent.JobsAgents[self.agent.remainingjobs[0]]],ptime]
+                                    MachineData=[self.agent.remainingjobs[0],ptime]
+                                    print(f"Received coordinates: {machine}")
+                                    askmachine = Message(to=self.agent.MachineAgents[str(machine)])
+                                    askmachine.set_metadata("performative", "ask_machine") 
+                                    askmachine.body = "canIcome"
+                                    await self.send(askmachine)
+                                    await asyncio.sleep(4)
+                                    machine_reply=await self.receive(timeout=None)
+                                    if machine_reply:
+                                        performative=machine_reply.get_metadata("performative")
+                                        if performative=="machine_reply" and machine_reply.body=="Yes":
+                                            self.agent.i=False
+                                            #checkout for error
+                                            self.agent.machine = self.agent.RMachineAgents[self.agent.MachineAgents[self.agent.remainingjobs[0]]]
+                                            self.agent.ptime = ptime
+                                            self.set_next_state("Processing")
+                                    else:
+                                        self.set_next_state("Idle")     
+                                except json.JSONDecodeError:
+                                    print("Error: Unable to decode message body as JSON.")
+                                    self.set_next_state("Idle")
+
+                            elif performative=="inform_amr" and msg.body=="tasks are done":
+                                self.agent.remainingjobs.popleft()
+                                print("Going to Unloading Dock")
+                                self.agent.machine = -2
+                                self.agent.ptime = 3
+                                self.set_next_state("Processing")
+                                                            
+                                # if self.agent.remainingjobs==None:
+                                #     self.set_next_state("Dock")
+                                # else:
+                                #     self.set_next_state("Idle")
+                        else:
+                            print("No Message Received")
+                            self.set_next_state("Idle")
+
+                    while self.agent.t==False:
+                        await asyncio.sleep(2)            
+                        tellmachine=Message(to=machine_reply.sender)
+                        tellmachine.set_metadata("performative","waiting_for_machine_to_process")
+                        tellmachine.body=json.dumps(MachineData)
+                        await self.send(tellmachine)
+                        await asyncio.sleep(1)
+                        machine_finish=await self.receive(timeout=60)
+                        if machine_finish:
+                            performative=machine_finish.get_metadata("performative")
+                            if performative=="machine_finish" and machine_finish.body=="machingdone":
+                                print("Maching Processing completed")
+                                self.agent.t=True
+                                self.agent.i=True
                                 self.set_next_state("Idle")
-
-                        elif performative=="inform_amr" and msg.body=="tasks are done":
-                            
-                            self.agent.remainingjobs.popleft()
-                            if self.agent.remainingjobs==None:
-                                self.set_next_state("Dock")
-                    else:
-                        print("No Message Received")
-                        self.set_next_state("Idle")
-
-                while self.agent.t==False:
-                    await asyncio.sleep(2)            
-                    tellmachine=Message(to=machine_reply.sender)
-                    tellmachine.set_metadata("performative","tell")
-                    tellmachine.body=json.dumps(MachineData)
-                    await self.send(tellmachine)
-                    await asyncio.sleep(1)
-                    machine_finish=await self.receive(timeout=None)
-                    if machine_finish:
-                        performative=machine_finish.get_metadata("performative")
-                        if performative=="machine_finish" and machine_finish.body=="machingdone":
-                            print("Maching Processing completed")
-                            self.agent.t=True
-                            self.agent.i=True
+                        else:
                             self.set_next_state("Idle")
 
 
@@ -245,8 +265,11 @@ class AMR1(Agent):
                     self.set_next_state("waitingfor_jobset")
                 elif self.agent.machine==-2:
                     print("Reached Unloading Dock")
-                    self.agent.u==False
-                    self.set_next_state("Dock")
+                    self.agent.check_for_breakdown=True
+                    if self.agent.remainingjobs==None:
+                        self.set_next_state("Dock")
+                    else:
+                        self.set_next_state("Idle")
                 else:
                     print(f"Reached Machine: {self.agent.machine}") 
                     self.agent.t=False
@@ -262,8 +285,8 @@ class AMR1(Agent):
         async def run(self):
             print("State: Breakdown. Sending JID of assistance agent...")
             msg = Message(to="scheduler@jabber.fr")
-            msg.set_metadata("performative", "inform")
-            msg.body = "Breakdown: please assist."
+            msg.set_metadata("performative", "Breakdown: please assist")
+            msg.body = "robot1@jabber.fr"
             await self.send(msg)
             print("Breakdown message sent to another agent.")
             self.set_next_state("Idle")
