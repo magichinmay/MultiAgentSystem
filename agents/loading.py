@@ -45,7 +45,7 @@ class LoadingDockAgent(Agent):
     class IdleState(State):
         async def run(self):
             print("IDLE state: Listening for amr messages ")
-            msg = await self.receive(timeout=15)
+            msg = await self.receive(timeout=30)
             if msg:
                 # self.agent.sender_jid =self.agent.RAmrAgents[msg.sender.bare]
                 if msg.get_metadata("performative") == "ask":

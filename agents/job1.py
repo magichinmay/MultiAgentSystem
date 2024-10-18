@@ -65,11 +65,12 @@ class JobAgent1(Agent):
             print("Changing state to sendingcoordinates")
             
             while self.agent.y==True:
-                job = await self.receive(timeout=None)
+                job = await self.receive(timeout=100)
                 if job:
                     performative = job.get_metadata("performative")
                     if performative == "ask_for_op" and job.body=="Idle":
-                        msg=Message(to=job.sender)
+                        print("Received request from",job.sender)
+                        msg=Message(to=str(job.sender))
                         msg.set_metadata("performative","job_orders")
                         coordinates=self.agent.data[self.agent.index]
                         msg.body = json.dumps(coordinates)

@@ -8,7 +8,6 @@ from aioxmpp import version, disco
 from geometry_msgs.msg import PoseStamped
 from rclpy.duration import Duration
 import rclpy
-import time
 from collections import deque
 if not rclpy.ok():  # Ensure rclpy.init() is called only once
     rclpy.init()
@@ -45,8 +44,8 @@ class AMR1(Agent):
                 '1': 'machine2',
                 '2': 'machine3',
                 '3': 'machine4',
-                '-1': 'loading_dock',
-                '-2': 'unloading_dock'
+                '-1': 'loading_Mdock',
+                '-2': 'unloading_Mdock'
             }
         self.waiting_for_job=True
         self.going_to_loading=True
@@ -98,7 +97,7 @@ class AMR1(Agent):
                 job=await self.receive(timeout=10)
                 if job:
                     performative=job.get_metadata("performative")
-                    if performative=="loading_dock_ready":
+                    if performative=="loading_Mdock_ready":
                         try:
                             my_job = json.loads(job.body)
                             if isinstance(my_job, list):
@@ -118,7 +117,7 @@ class AMR1(Agent):
     class Loading(State):
         async def run(self):
             if self.agent.going_to_loading==True:    
-                # print("Going to Loading Dock")
+                print("Going to Loading Dock")
                 self.agent.machine = -1
                 self.agent.ptime = 3
                 self.set_next_state("Processing")
@@ -250,7 +249,7 @@ class AMR1(Agent):
 
     class Processing(State):
         async def run(self):
-            print("Going to",self.agent.Workstations[str(self.agent.machine)])
+            print("Going to",self.agent.Workstations[self.agent.machine])
             pose=self.agent.machine
 
 
@@ -262,8 +261,8 @@ class AMR1(Agent):
             m3_Mdock=[0.55,7.5]
             m4 = [1.681, 1.407]
             m4_Mdock=[0.55,0.002]
-            loading_dock = [-6.69, 4.028]
-            unloading_dock = [3.52, 3.96]
+            loading_Mdock = [-6.69, 4.028]
+            unloading_Mdock = [3.52, 3.96]
 
             poses = {
                 '0': m1,
@@ -274,8 +273,8 @@ class AMR1(Agent):
                 '2d':m3_Mdock,
                 '3': m4,
                 '3d':m4_Mdock,
-                '-1': loading_dock,
-                '-2': unloading_dock
+                '-1': loading_Mdock,
+                '-2': unloading_Mdock
             }
 
             goal_pose = PoseStamped()
@@ -284,12 +283,9 @@ class AMR1(Agent):
             goal_pose.pose.position.x = poses[str(pose)][0]
             goal_pose.pose.position.y = poses[str(pose)][1] 
             goal_pose.pose.orientation.w = 1.0
-            print("navigate bitch")
 
             self.agent.navigator.goToPose(goal_pose)
-            while not self.agent.navigator.goToPose(goal_pose):
-                time.sleep(1)
-            print("give result")
+
             result = self.agent.navigator.getResult()
             if result == TaskResult.SUCCEEDED:
                 if self.agent.machine==-1:

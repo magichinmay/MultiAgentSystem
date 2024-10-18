@@ -24,12 +24,13 @@ class MachineAgent(Agent):
             print(f"{self.agent.name}: In IDLE state")
             # Wait for an incoming message with job number and AMR number
             if self.agent.dock_amr==None:
-                msg = await self.receive(timeout=float(inf))
+                msg = await self.receive(timeout=500)
                 if msg:
+                    print(msg.body,"msg from",msg.sender)
                     performative = msg.get_metadata("performative")
                     if performative == "ask_machine" and msg.body=="canIcome":
                         self.agent.amr=msg.sender
-                        reply = Message(to=msg.sender)
+                        reply = Message(to=str(msg.sender))
                         reply.set_metadata("performative", "machine_reply")
                         reply.body = "Yes"
                         await self.send(reply)
@@ -39,7 +40,7 @@ class MachineAgent(Agent):
                     self.set_next_state(IDLE)
                     # The state machine will automatically go back to IDLE after the timeout
             else:
-                call_dock_amr=Message(to=self.agent.dock_amr)
+                call_dock_amr=Message(to=str(self.agent.dock_amr))
                 call_dock_amr.set_metadata("performative", "machine_reply")
                 call_dock_amr.body="Yes"
                 await self.send(call_dock_amr)
@@ -77,7 +78,7 @@ class MachineAgent(Agent):
             await asyncio.sleep(self.agent.ptime)
             
             # After processing, send a "Processing complete" message back to the sender
-            response = Message(to=self.agent.amr)
+            response = Message(to=str(self.agent.amr))
             response.set_metadata("performative", "machine_reply")
             response.body = "Processing complete"
             await self.send(response)
