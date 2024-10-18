@@ -103,9 +103,11 @@ class MachineAgent(Agent):
         fsm.add_state(name=WAITING, state=self.Waiting())
         fsm.add_state(name=PROCESSING, state=self.ProcessingState())
         
+        fsm.add_transition(source=IDLE, dest=IDLE)
+        fsm.add_transition(source=IDLE, dest=WAITING)
+        fsm.add_transition(source=WAITING, dest=WAITING)
         fsm.add_transition(source=IDLE, dest=PROCESSING)
         fsm.add_transition(source=PROCESSING, dest=IDLE)
-        fsm.add_transition(source=IDLE, dest=IDLE)
 
 
         # Add the FSM behavior to the agent

@@ -9,6 +9,8 @@ from geometry_msgs.msg import PoseStamped
 from rclpy.duration import Duration
 import rclpy
 from collections import deque
+if not rclpy.ok():  # Ensure rclpy.init() is called only once
+    rclpy.init()
 
 class AMR1(Agent):
     def __init__(self, *args, **kwargs):
@@ -37,6 +39,14 @@ class AMR1(Agent):
             "machine3@jabber.fr":'2',
             "machine4@jabber.fr":'3'
         }
+        self.Workstations = {
+                '0': 'machine1',
+                '1': 'machine2',
+                '2': 'machine3',
+                '3': 'machine4',
+                '-1': 'loading_dock',
+                '-2': 'unloading_dock'
+            }
         self.waiting_for_job=True
         self.going_to_loading=True
         self.loading=False
@@ -76,7 +86,6 @@ class AMR1(Agent):
 
     class waitingfor_jobset(State):
         async def run(self):
-            rclpy.init()
             while self.agent.waiting_for_job==True: 
                 ask=Message(to="loadingdock@jabber.fr")
                 ask.set_metadata("performative", "ask")
@@ -92,7 +101,7 @@ class AMR1(Agent):
                         try:
                             my_job = json.loads(job.body)
                             if isinstance(my_job, list):
-                                print(f"Received coordinates: {my_job}")
+                                print(f"Received Job: {my_job}")
                                 job = [str(element) for element in my_job]
                                 self.agent.remainingjobs=deque(my_job)
                                 self.agent.waiting_for_job=False
@@ -126,6 +135,8 @@ class AMR1(Agent):
                     if performative=="loading" and my_job.body=="loading_completed":
                         print("Job Loading Completed")
                         self.set_next_state("Idle")
+                else:
+                    self.set_next_state("loading")                        
 
 
     class Idle(State):
@@ -172,8 +183,10 @@ class AMR1(Agent):
                                             self.agent.machine = self.agent.RMachineAgents[self.agent.MachineAgents[self.agent.remainingjobs[0]]]
                                             self.agent.ptime = ptime
                                             self.set_next_state("Processing")
-                                        elif performative=="machine_reply" and machine_reply=="Come to Machine Dock":
-                                            self.agent.dock=True
+                                        elif performative=="machine_reply" and machine_reply=="Come to Machine MDock":
+                                            self.agent.machine = str(self.agent.RMachineAgents[self.agent.MachineAgents[self.agent.remainingjobs[0]]])+'d'
+                                            self.agent.ptime = ptime
+                                            self.set_next_state("Processing")
                                     else:
                                         self.set_next_state("Idle")     
                                 except json.JSONDecodeError:
@@ -208,13 +221,13 @@ class AMR1(Agent):
                         else:
                             self.set_next_state("Idle")
 
-                    while self.agent.dock==True:
+                    while self.agent.Mdock==True:
                         msg2=await self.receive(timeout=None)
                         if msg2:
                             performative=msg2.get_metadata("performative")
                             if performative=="machine_reply" and msg2.body=="Yes":
                                 self.agent.idle=False
-                                self.agent.dock=False
+                                self.agent.Mdock=False
                                 #checkout for error
                                 self.agent.machine = self.agent.RMachineAgents[self.agent.MachineAgents[self.agent.remainingjobs[0]]]
                                 self.agent.ptime = ptime
@@ -236,46 +249,51 @@ class AMR1(Agent):
 
     class Processing(State):
         async def run(self):
-            print(f"State: Processing coordinates: {self.agent.machine}")
-            print(f"State: Processing Time: {self.agent.ptime}")
-            await asyncio.sleep(self.agent.ptime + 2)
-            self.set_next_state("Idle")
-            rclpy.init()
+            print("Going to",self.agent.Workstations[str(self.agent.machine)])
             pose=self.agent.machine
-            navigator = BasicNavigator()
+
 
             m1 = [-3.32, 6.65]
+            m1_Mdock=[-4.5,7.43]
             m2 = [-3.38, 1.46]
+            m2_Mdock=[-4.5,0.47]
             m3 = [1.627, 6.459]
+            m3_Mdock=[0.55,7.5]
             m4 = [1.681, 1.407]
+            m4_Mdock=[0.55,0.002]
             loading_dock = [-6.69, 4.028]
             unloading_dock = [3.52, 3.96]
 
             poses = {
                 '0': m1,
+                '0d':m1_Mdock,
                 '1': m2,
+                '1d':m2_Mdock,
                 '2': m3,
+                '2d':m3_Mdock,
                 '3': m4,
+                '3d':m4_Mdock,
                 '-1': loading_dock,
                 '-2': unloading_dock
             }
 
             goal_pose = PoseStamped()
             goal_pose.header.frame_id = 'map'
-            goal_pose.header.stamp = navigator.get_clock().now().to_msg()
+            goal_pose.header.stamp = self.agent.navigator.get_clock().now().to_msg()
             goal_pose.pose.position.x = poses[str(pose)][0]
             goal_pose.pose.position.y = poses[str(pose)][1] 
             goal_pose.pose.orientation.w = 1.0
 
-            navigator.goToPose(goal_pose)
+            self.agent.navigator.goToPose(goal_pose)
 
-            result = navigator.getResult()
+            result = self.agent.navigator.getResult()
             if result == TaskResult.SUCCEEDED:
                 if self.agent.machine==-1:
                     print("Reached Loading Dock")
                     self.agent.going_to_loading=False
                     self.agent.loading=True
                     self.set_next_state("loading")
+
                 elif self.agent.machine==-2:
                     print("Reached Unloading Dock")
                     self.agent.check_for_breakdown=True
@@ -283,13 +301,21 @@ class AMR1(Agent):
                         self.set_next_state("Dock")
                     else:
                         self.set_next_state("Idle")
+
+                elif self.agent.machine=='0d' or self.agent.machine=='1d' or self.agent.machine=='2d' or self.agent.machine=='3d':
+                    print("Reached Machine Dock",self.agent.machine)
+                    self.agent.Mdock=True
+                    self.set_next_state("Idle")
+
                 else:
                     print(f"Reached Machine: {self.agent.machine}") 
                     self.agent.travelling=False
                     self.set_next_state("Idle")  # Return to Idle after processing
+
             elif result == TaskResult.CANCELED:
                 print('Inspection of shelving was canceled. Returning to start...')
                 exit(1)
+                
             elif result == TaskResult.FAILED:
                 print('Inspection of shelving failed! Returning to start...')
             
@@ -314,6 +340,7 @@ class AMR1(Agent):
                     self.set_next_state("Idle")
 
     async def setup(self):
+        self.navigator = BasicNavigator(namespace="robot1")
         fsm = self.AMRFSM()
         #All the States
         fsm.add_state(name="Ready", state=self.Ready(), initial=True)

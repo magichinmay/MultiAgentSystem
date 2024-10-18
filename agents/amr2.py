@@ -9,6 +9,8 @@ from geometry_msgs.msg import PoseStamped
 from rclpy.duration import Duration
 import rclpy
 from collections import deque
+if not rclpy.ok():  # Ensure rclpy.init() is called only once
+    rclpy.init()
 
 class AMR2(Agent):
     def __init__(self, *args, **kwargs):
@@ -36,6 +38,14 @@ class AMR2(Agent):
             "machine2@jabber.fr":'1',
             "machine3@jabber.fr":'2',
             "machine4@jabber.fr":'3'
+        }
+        self.Machines= {
+            '0': 'machine1',
+            '1': 'machine2',
+            '2': 'machine3',
+            '3': 'machine4',
+            '-1': 'loading_dock',
+            '-2': 'unloading_dock'
         }
         self.waiting_for_job=True
         self.going_to_loading=True
@@ -76,7 +86,6 @@ class AMR2(Agent):
 
     class waitingfor_jobset(State):
         async def run(self):
-            rclpy.init()
             while self.agent.waiting_for_job==True: 
                 ask=Message(to="loadingdock@jabber.fr")
                 ask.set_metadata("performative", "ask")
@@ -92,7 +101,7 @@ class AMR2(Agent):
                         try:
                             my_job = json.loads(job.body)
                             if isinstance(my_job, list):
-                                print(f"Received coordinates: {my_job}")
+                                print(f"Received Job: {my_job}")
                                 job = [str(element) for element in my_job]
                                 self.agent.remainingjobs=deque(my_job)
                                 self.agent.waiting_for_job=False
@@ -107,13 +116,13 @@ class AMR2(Agent):
     
     class Loading(State):
         async def run(self):
-            while self.agent.going_to_loading==True:    
+            if self.agent.going_to_loading==True:    
                 print("Going to Loading Dock")
                 self.agent.machine = -1
                 self.agent.ptime = 3
                 self.set_next_state("Processing")
 
-            while self.agent.loading==True:        
+            if self.agent.loading==True:        
                 ask=Message(to="loadingdock@jabber.fr")
                 ask.set_metadata("performative", "ask")
                 ask.body = "load_the_job"
@@ -126,6 +135,8 @@ class AMR2(Agent):
                     if performative=="loading" and my_job.body=="loading_completed":
                         print("Job Loading Completed")
                         self.set_next_state("Idle")
+                else:
+                    self.set_next_state("loading")
 
 
     class Idle(State):
@@ -236,13 +247,8 @@ class AMR2(Agent):
 
     class Processing(State):
         async def run(self):
-            print(f"State: Processing coordinates: {self.agent.machine}")
-            print(f"State: Processing Time: {self.agent.ptime}")
-            await asyncio.sleep(self.agent.ptime + 2)
-            self.set_next_state("Idle")
-            rclpy.init()
+            print("Going to",self.agent.Workstations[self.agent.machine])
             pose=self.agent.machine
-            navigator = BasicNavigator()
 
             m1 = [-3.32, 6.65]
             m2 = [-3.38, 1.46]
@@ -262,14 +268,14 @@ class AMR2(Agent):
 
             goal_pose = PoseStamped()
             goal_pose.header.frame_id = 'map'
-            goal_pose.header.stamp = navigator.get_clock().now().to_msg()
+            goal_pose.header.stamp = self.agent.navigator.get_clock().now().to_msg()
             goal_pose.pose.position.x = poses[str(pose)][0]
             goal_pose.pose.position.y = poses[str(pose)][1] 
             goal_pose.pose.orientation.w = 1.0
 
-            navigator.goToPose(goal_pose)
+            self.agent.navigator.goToPose(goal_pose)
 
-            result = navigator.getResult()
+            result = self.agent.navigator.getResult()
             if result == TaskResult.SUCCEEDED:
                 if self.agent.machine==-1:
                     print("Reached Loading Dock")
@@ -314,6 +320,7 @@ class AMR2(Agent):
                     self.set_next_state("Idle")
 
     async def setup(self):
+        self.navigator = BasicNavigator(namespace="robot2")
         fsm = self.AMRFSM()
         #All the States
         fsm.add_state(name="Ready", state=self.Ready(), initial=True)

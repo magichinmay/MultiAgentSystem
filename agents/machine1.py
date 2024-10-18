@@ -43,6 +43,7 @@ class MachineAgent(Agent):
                 call_dock_amr.set_metadata("performative", "machine_reply")
                 call_dock_amr.body="Yes"
                 await self.send(call_dock_amr)
+                self.agent.dock_amr=None
                 self.set_next_state(WAITING)
 
     
@@ -103,9 +104,12 @@ class MachineAgent(Agent):
         fsm.add_state(name=WAITING, state=self.Waiting())
         fsm.add_state(name=PROCESSING, state=self.ProcessingState())
         
+        fsm.add_transition(source=IDLE, dest=IDLE)
+        fsm.add_transition(source=IDLE, dest=WAITING)
+        fsm.add_transition(source=WAITING, dest=WAITING)
         fsm.add_transition(source=IDLE, dest=PROCESSING)
         fsm.add_transition(source=PROCESSING, dest=IDLE)
-        fsm.add_transition(source=IDLE, dest=IDLE)
+        
 
 
         # Add the FSM behavior to the agent
