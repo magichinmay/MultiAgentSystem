@@ -8,6 +8,7 @@ from aioxmpp import version, disco
 from geometry_msgs.msg import PoseStamped
 from rclpy.duration import Duration
 import rclpy
+import time
 from collections import deque
 if not rclpy.ok():  # Ensure rclpy.init() is called only once
     rclpy.init()
@@ -117,7 +118,7 @@ class AMR1(Agent):
     class Loading(State):
         async def run(self):
             if self.agent.going_to_loading==True:    
-                print("Going to Loading Dock")
+                # print("Going to Loading Dock")
                 self.agent.machine = -1
                 self.agent.ptime = 3
                 self.set_next_state("Processing")
@@ -283,9 +284,12 @@ class AMR1(Agent):
             goal_pose.pose.position.x = poses[str(pose)][0]
             goal_pose.pose.position.y = poses[str(pose)][1] 
             goal_pose.pose.orientation.w = 1.0
+            print("navigate bitch")
 
             self.agent.navigator.goToPose(goal_pose)
-
+            while not self.agent.navigator.goToPose(goal_pose):
+                time.sleep(1)
+            print("give result")
             result = self.agent.navigator.getResult()
             if result == TaskResult.SUCCEEDED:
                 if self.agent.machine==-1:

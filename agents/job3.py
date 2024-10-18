@@ -68,9 +68,9 @@ class JobAgent3(Agent):
                 job = await self.receive(timeout=None)
                 if job:
                     performative = job.get_metadata("performative")
-                    if performative == "request" and job.body=="Idle":
+                    if performative == "ask_for_op" and job.body=="Idle":
                         msg=Message(to=job.sender)
-                        msg.set_metadata("performative","order")
+                        msg.set_metadata("performative","job_orders")
                         coordinates=self.agent.data[self.agent.index]
                         msg.body = json.dumps(coordinates)
                         await self.send(msg)
@@ -80,7 +80,7 @@ class JobAgent3(Agent):
                         self.agent.index += 1
                     else:
                         complete1 = Message(to=job.sender)
-                        complete1.set_metadata("performative", "inform")
+                        complete1.set_metadata("performative", "inform_amr")
                         complete1.body = "tasks are done"
                         self.agent.state = "Complete"
                         await self.send(complete1)
