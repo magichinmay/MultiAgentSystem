@@ -170,8 +170,8 @@ class AMR1(Agent):
                                     MachineData=[self.agent.remainingjobs[0],ptime]
                                     print(f"Received coordinates: {machine}")
                                     askmachine = Message(to=self.agent.MachineAgents[str(machine)])
-                                    askmachine.set_metadata("performative", "ask_machine") 
-                                    askmachine.body = "canIcome"
+                                    askmachine.set_metadata("performative", "ask_machine_for_processing") 
+                                    askmachine.body = str(MachineData[0])
                                     await self.send(askmachine)
                                     await asyncio.sleep(4)
                                     machine_reply=await self.receive(timeout=None)

@@ -29,17 +29,18 @@ class LoadingDockAgent(Agent):
         async def run(self):
             print("INIT state: Waiting to receive job sets from scheduler")
             # Keep waiting until a message is received
-            msg = await self.receive(timeout=float(inf))
-            # await asyncio.sleep(5)  # Wait indefinitely for the job list
-            if msg and msg.get_metadata("performative") == "Job_sets":
-                job_list = json.loads(msg.body)
-                self.agent.remaining_job_sets = deque(job_list)
-                print(f"Received job sets: {self.agent.remaining_job_sets}")
-                self.set_next_state(IDLE)
-                return  # Exit after setting the next state
-            else:
-                self.set_next_state(INIT)
-                print("No valid job sets received, retrying...")
+            while self.agent.Init==True:
+                msg = await self.receive(timeout=25)
+                # await asyncio.sleep(5)  # Wait indefinitely for the job list
+                if msg and msg.get_metadata("performative") == "Job_sets":
+                    job_list = json.loads(msg.body)
+                    self.agent.remaining_job_sets = deque(job_list)
+                    print(f"Received job sets: {self.agent.remaining_job_sets}")
+                    self.agent.Init=False
+                    self.set_next_state(IDLE)
+                else:
+                    self.set_next_state(INIT)
+                    print("No valid job sets received, retrying...")
 
 
     class IdleState(State):
@@ -110,6 +111,7 @@ class LoadingDockAgent(Agent):
         self.assigned_job_sets = None
         self.num_amrs_registered = 0
         self.sender_jid = None
+        self.Init=True
 
         self.AmrAgents={
             '0':"robot1@jabber.fr",

@@ -1,132 +1,170 @@
 from spade.agent import Agent
-from spade.behaviour import FSMBehaviour, State
+from spade.behaviour import CyclicBehaviour, FSMBehaviour, State
 from spade.message import Message
 import asyncio
 import json
-from math import inf
+import sys
+import os
 
-# States
-IDLE = "IDLE"
-PROCESSING = "PROCESSING"
-WAITING="WAITING"
+from aioxmpp import version, disco
+
 
 class MachineAgent(Agent):
-    
-    class MachineBehaviour(FSMBehaviour):
+    def __init__(self, jid, password):
+        super().__init__(jid, password)
+        print("Running Machine Agent 1")
+        # Initialize state1 and state2
+        self.state = "waiting for schedule"  # Added initialization for state1
+
+        self.index = 0  # Keep track of which coordinate to send
+        self.data=0
+        self.x=True
+        self.y=True
+
+        self.waiting=True
+        self.idle=True
+        self.jobs=None
+        self.Completed_Jobs=[]
+
+    class AMRFSM(FSMBehaviour):
         async def on_start(self):
-            print(f"{self.agent.name}: FSM starting")
-            
+            print("Machine Agent 1 started.")
+
         async def on_end(self):
-            print(f"{self.agent.name}: FSM finished with state {self.current_state}")
-    
-    class IdleState(State):
+            print("Machine Agent 1 finished.")
+
+
+    class waiting_for_op(State):
         async def run(self):
-            print(f"{self.agent.name}: In IDLE state")
-            # Wait for an incoming message with job number and AMR number
-            if self.agent.dock_amr==None:
-                msg = await self.receive(timeout=500)
+            print("waiting for jobs from scheduler")  
+            while self.agent.waiting==True:  # Loop indefinitely until a message is received
+                operation = await self.receive(timeout=25)  # Wait indefinitely
+                if operation:
+                    performative = operation.get_metadata("performative")
+                    if performative == "jobs_from_scheduler":
+                        self.agent.jobs = json.loads(operation.body)
+                        print("The Jobs to be processed", self.agent.jobs)
+                        self.agent.waiting=False
+                        self.set_next_state("ProcessingState")
+                        break  # Exit the loop when a job is received and processed
+                else:
+                    print("No message received, waiting...")
+
+
+    class Idle(State):
+        async def run(self):
+            print("Changing state to Idle")
+            while self.agent.idle==True:
+                msg = await self.receive(timeout=25)
                 if msg:
                     print(msg.body,"msg from",msg.sender)
                     performative = msg.get_metadata("performative")
-                    if performative == "ask_machine" and msg.body=="canIcome":
+                    if performative == "ask_machine_for_processing" and msg.body==str(self.agent.jobs[0][0]):
                         self.agent.amr=msg.sender
-                        reply = Message(to=str(msg.sender))
+                        print(msg.sender)
+                        reply = Message(to=(msg.sender))
                         reply.set_metadata("performative", "machine_reply")
                         reply.body = "Yes"
                         await self.send(reply)
-                        self.set_next_state(WAITING)
+                        self.agent.idle=False
+                        self.set_next_state("ProcessingState")
+                    else:
+                        self.set_next_state("Idle")
                 else:
                     print(f"{self.agent.name}: No message received, staying in IDLE state")
-                    self.set_next_state(IDLE)
+                    self.set_next_state("Idle")
                     # The state machine will automatically go back to IDLE after the timeout
-            else:
-                call_dock_amr=Message(to=str(self.agent.dock_amr))
-                call_dock_amr.set_metadata("performative", "machine_reply")
-                call_dock_amr.body="Yes"
-                await self.send(call_dock_amr)
-                self.agent.dock_amr=None
-                self.set_next_state(WAITING)
-
-    
-    class Waiting(State):
-        async def run(self):
-            print("waiting for amr")
-            msg1 = await self.receive(timeout=float(inf))
-            if msg1:
-                performative = msg1.get_metadata("performative")
-                if performative == "ask_machine" and msg1.body=="canIcome":
-                    reply = Message(to=msg1.sender)
-                    self.agent.dock_amr=msg1.sender
-                    reply.set_metadata("performative", "machine_reply")
-                    reply.body = "Come to Machine Dock"
-                    await self.send(reply)
-                    self.set_next_state(WAITING)
-                elif performative == "waiting_for_machine_to_process":
-                    machining_data=json.loads(msg1.body)
-                    self.agent.currently_processed=machining_data[0]
-                    self.agent.ptime=machining_data[1]
-                    self.set_next_state(PROCESSING)
-
-
-
 
     class ProcessingState(State):
         async def run(self):
-            print(f"{self.agent.name}: In PROCESSING state")
-            print(f"{self.agent.name}: Currently processing: {self.agent.currently_processed}")
-            
-            # Simulate processing delay based on ptime
-            await asyncio.sleep(self.agent.ptime)
-            
-            # After processing, send a "Processing complete" message back to the sender
-            response = Message(to=str(self.agent.amr))
-            response.set_metadata("performative", "machine_reply")
-            response.body = "Processing complete"
-            await self.send(response)
-            
-            print(f"{self.agent.name}: Sent 'Processing complete' to {self.agent.sender_jid}")
-            
-            # Transition back to IDLE state
-            self.set_next_state(IDLE)
-    
+            print("waiting for amr")
+            msg=await self.receive(timeout=200)
+            if msg:
+                performative=msg.get_metadata("performative")
+                if performative=="waiting_for_machine_to_process" and msg.body=="Ready":
+                    machining=self.agent.jobs
+                    job=machining[0][0]
+                    operation=machining[0][1]
+                    processing_time=machining[0][2]
+
+                    print("Processing Job",job,"operation",operation)            
+                    # Simulate processing delay based on ptime
+                    await asyncio.sleep(processing_time)
+                    completed_jobs=self.agent.jobs.pop(0)
+                    self.agent.Completed_Jobs.append(completed_jobs)
+
+                    # After processing, send a "Processing complete" message back to the sender
+                    response = Message(to=msg.sender)
+                    response.set_metadata("performative", "machine_reply")
+                    response.body = "Processing complete"
+                    await self.send(response)
+                    self.agent.idle=True
+                    print("Processing job",job,"completed")
+                    # Transition back to IDLE state
+                    self.set_next_state("ProcessingState")
+                    print("Completed Jobs",self.agent.Completed_Jobs)
+                    print("Remaining Jobs",self.agent.jobs)
+
+                else:
+                    self.set_next_state("ProcessingState")
+            else:
+                self.set_next_state("ProcessingState")
+
+
+
     async def setup(self):
-        print(f"{self.name}: Agent starting...")
+        fsm = self.AMRFSM()
 
-        # Initialize currently processed variable
-        self.currently_processed = None
-        self.sender_jid = None
-        self.ptime = None
-        self.amr=None
-        self.dock_amr=None
-        
-        # Initialize the state machine
-        fsm = self.MachineBehaviour()
-        fsm.add_state(name=IDLE, state=self.IdleState(), initial=True)
-        fsm.add_state(name=WAITING, state=self.Waiting())
-        fsm.add_state(name=PROCESSING, state=self.ProcessingState())
-        
-        fsm.add_transition(source=IDLE, dest=IDLE)
-        fsm.add_transition(source=IDLE, dest=WAITING)
-        fsm.add_transition(source=WAITING, dest=WAITING)
-        fsm.add_transition(source=IDLE, dest=PROCESSING)
-        fsm.add_transition(source=PROCESSING, dest=IDLE)
-        
+        # All the States
+        fsm.add_state(name="waiting_for_op", state=self.waiting_for_op(), initial=True)
+        fsm.add_state(name="Idle", state=self.Idle())
+        fsm.add_state(name="ProcessingState", state=self.ProcessingState())
 
+        # Transition from one State to another State
+        fsm.add_transition(source="waiting_for_op", dest="waiting_for_op")
+        fsm.add_transition(source="waiting_for_op", dest="Idle")
 
-        # Add the FSM behavior to the agent
+        fsm.add_transition(source="Idle", dest="Idle")
+        fsm.add_transition(source="Idle", dest="ProcessingState")
+
+        fsm.add_transition(source="waiting_for_op", dest="ProcessingState")
+        fsm.add_transition(source="ProcessingState", dest="waiting_for_op")
+
+        fsm.add_transition(source="ProcessingState", dest="ProcessingState")
+        fsm.add_transition(source="ProcessingState", dest="Idle")
+
         self.add_behaviour(fsm)
 
-async def main():
-    # Create and start the agents
-    machine1 = MachineAgent("machine1@jabber.fr", "changeme")
-    await machine1.start()
+        # Register handlers for XMPP version and disco queries
+        self.presence.version_handler = self.version_query_handler
+        self.presence.disco_info_handler = self.disco_info_query_handler
 
-    try:
-        while machine1.is_alive():
-            await asyncio.sleep(1)
-    except KeyboardInterrupt:
-        await machine1.stop()
+    def version_query_handler(self, iq):
+        iq.make_result()
+        version_data = version.xso.Query()
+        version_data.name = "MachineAgent"
+        version_data.version = "1.0"
+        iq.payload = version_data
+        return iq
 
-# Run the main function using asyncio
+    def disco_info_query_handler(self, iq):
+        iq.make_result()
+        disco_data = disco.xso.InfoQuery()
+        iq.payload = disco_data
+        return iq
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    scheduler_agent = MachineAgent("machine1@jabber.fr", "changeme")
+
+    async def run():
+        await scheduler_agent.start()
+        print("MachineAgent started")
+
+        try:
+            while scheduler_agent.is_alive():
+                await asyncio.sleep(1)
+        except KeyboardInterrupt:
+            await scheduler_agent.stop()
+
+    asyncio.run(run())

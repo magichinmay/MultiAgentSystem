@@ -35,6 +35,7 @@ class SchedulerAgent(Agent):
         self.scmax=0
         self.rcmax=0
         self.r=False
+        self.job_sequences_for_machines = []
         
 
     class AMRFSM(FSMBehaviour):
@@ -110,21 +111,22 @@ class SchedulerAgent(Agent):
             self.agent.operation_data=scheduler1.operation_data
             
             amr_list=chromsome1.amr_list
-            for amr in amr_list:
-                self.agent.job_sets.append(amr.completed_jobs)
+            for amrs in amr_list:
+                self.agent.job_sets.append(amrs.completed_jobs)
             print(self.agent.job_sets)
 
             machine_list = chromsome1.machine_list
-            
-            for machine in machine_list:
+            for machine in machine_list:              
                 machine_sublist = []
                 for operation in machine.operationlist:
-                    machine_sublist.append([operation.job_number, operation.operation_number, operation.Pj])
-
+                    if operation.Pj!=0:                        
+                        machine_sublist.append([operation.job_number, operation.operation_number, operation.Pj])
+                
                 self.agent.machine_job_set.append(machine_sublist)
             
             self.agent.scmax=chromsome1.Cmax
             print("machine_job_set",self.agent.machine_job_set)
+            print("job sequences for machines",self.agent.job_sequences_for_machines)
             self.set_next_state("Send_Schedule")
 
 
@@ -174,16 +176,6 @@ class SchedulerAgent(Agent):
                         await self.send(Jmsg2)
             await asyncio.sleep(4)
 
-            # #Sends Job List to Loading Dock Agent
-            # Lmsg=Message(to="loadingdock@jabber.fr")
-            # Lmsg.set_metadata("performative","say")
-            # Lmsg.body=("status")
-            # await self.send(Lmsg)
-            # await asyncio.sleep(2)
-            # Lmsg1 = await self.receive(timeout=20)
-            # if Lmsg1:           
-            #     performative=Lmsg1.get_metadata("performative")
-            #     if performative=="say" and Lmsg1.body=="waitingforjob":
 
             Lmsg2=Message(to="loadingdock@jabber.fr")
             Lmsg2.set_metadata("performative","Job_sets")
@@ -194,27 +186,19 @@ class SchedulerAgent(Agent):
 
             #Sends all the Job's opeartion detail to each Machine Agent
             for index,machines in enumerate(self.agent.Machine):
-                Mmsg=Message(to=machines)
-                Mmsg.set_metadata("performative","say")
-                Mmsg.body=("status")
-                await self.send(Mmsg)
-                await asyncio.sleep(2)
-                Mmsg1 = await self.receive(timeout=20)
-                if Mmsg1:
-                    performative=Mmsg1.get_metadata("performative")
-                    if performative=="say" and Mmsg1.body=="waitingforjob":
-                        Machine_Job_Set=self.agent.machine_job_set[index]
-                        Mmsg2=Message(to=Mmsg1.sender)
-                        Mmsg2.set_metadata("performative","inform")
-                        Mmsg2.body=json.dumps(Machine_Job_Set)
-                        await self.send(Mmsg2)
-                        print("sent job data to machine to",index)
+                Machine_Job_Set=self.agent.machine_job_set[index]
+                Mmsg2=Message(to=machines)
+                Mmsg2.set_metadata("performative","jobs_from_scheduler")
+                Mmsg2.body=json.dumps(Machine_Job_Set)
+                await self.send(Mmsg2)
+                print("sent job data to machine to",index)
                 await asyncio.sleep(4)
 
 
             print("Changing state to RobotRegister")
             self.agent.open_for_reschedule=True
             self.set_next_state("RobotRegister")
+
 
 
     class JobComplete(State):
