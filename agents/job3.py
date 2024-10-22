@@ -77,36 +77,47 @@ class JobAgent3(Agent):
                     msg.body = json.dumps(coordinates)
                     await self.send(msg)
                     print(f"Sending coordinate: {coordinates} to AMR")
-                    self.set_next_state("sendingcoordinates")
+
+                    if self.agent.index < len(self.agent.data)-1:
+                        self.agent.index += 1
+                        self.set_next_state("sendingcoordinates")
+                    else:
+                        self.agent.amr=job.sender.bare
+                        # complete1 = Message(to=str(job.sender))
+                        # complete1.set_metadata("performative", "inform_amr")
+                        # complete1.body = "tasks are done"
+                        # self.agent.state = "Complete"
+                        # await self.send(complete1)
+                        self.set_next_state("JobComplete") 
+
                 else:
                     self.set_next_state("sendingcoordinates")
-                # Update index or mark completion
-                if self.agent.index < len(self.agent.data)-1:
-                    self.agent.index += 1
-                else:
-                    complete1 = Message(to=job.sender)
+            else:
+                self.set_next_state("sendingcoordinates")
+
+            # # Check if both states are complete
+            # if self.agent.state == "Complete" :
+            #     self.agent.y=False
+                
+
+    class JobComplete(State):
+        async def run(self):
+            print("All the operations completed")
+            job = await self.receive(timeout=20)
+            if job:
+                performative = job.get_metadata("performative")
+                if performative == "ask_for_op" and job.body=="Idle":
+                    print('sent task completed msg to',job.sender)
+                    complete1 = Message(to=str(job.sender))
+                    # print("sent msg to",self.agent.amr)
                     complete1.set_metadata("performative", "inform_amr")
                     complete1.body = "tasks are done"
                     self.agent.state = "Complete"
                     await self.send(complete1)
-                    await asyncio.sleep(3)
+                else:
+                    self.set_next_state("JobComplete") 
             else:
-                self.set_next_state("sendingcoordinates")
-
-            # Check if both states are complete
-            if self.agent.state == "Complete" :
-                print("Both AMR tasks are complete.")
-                self.agent.y=False
-                self.set_next_state("JobComplete")
-            
-
-    class JobComplete(State):
-        async def run(self):
-            newjob = await self.receive(timeout=None)
-            if newjob:
-                performative = newjob.get_metadata("performative")
-                if performative == "order" and newjob.body=="newjob":
-                    self.set_next_state("waitingforjob")
+                self.set_next_state("JobComplete") 
 
     async def setup(self):
         fsm = self.AMRFSM()
@@ -119,8 +130,10 @@ class JobAgent3(Agent):
         # Transition from one State to another State
         fsm.add_transition(source="waitingforjob", dest="sendingcoordinates")
         fsm.add_transition(source="sendingcoordinates", dest="waitingforjob")
+        fsm.add_transition(source="sendingcoordinates", dest="sendingcoordinates")
         fsm.add_transition(source="sendingcoordinates", dest="JobComplete")
         fsm.add_transition(source="JobComplete", dest="waitingforjob")
+        fsm.add_transition(source="JobComplete", dest="JobComplete")
 
         self.add_behaviour(fsm)
 
@@ -149,6 +162,7 @@ if __name__ == "__main__":
     async def run():
         await scheduler_agent.start()
         print("JobAgent3 started")
+        scheduler_agent.web.start(hostname="127.0.0.1", port="10013")
 
         try:
             while scheduler_agent.is_alive():

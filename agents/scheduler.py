@@ -184,6 +184,8 @@ class SchedulerAgent(Agent):
             await self.send(Lmsg2)
             await asyncio.sleep(4)
 
+            unload=Message
+
             #Sends all the Job's opeartion detail to each Machine Agent
             for index,machines in enumerate(self.agent.Machine):
                 Machine_Job_Set=self.agent.machine_job_set[index]
@@ -197,19 +199,22 @@ class SchedulerAgent(Agent):
 
             print("Changing state to RobotRegister")
             self.agent.open_for_reschedule=True
-            self.set_next_state("RobotRegister")
+            self.set_next_state("JobComplete")
 
 
 
     class JobComplete(State):
         async def run(self):
-            newjob = await self.receive(timeout=None)
-            if newjob:
-                performative = newjob.get_metadata("performative")
-                if performative == "new_schedule" and newjob.body=="Reschedule":
-                    print(newjob.body)
+            print("All Jobs complete")
+            await asyncio.sleep(25)
+            self.set_next_state("JobComplete")
+            # newjob = await self.receive(timeout=None)
+            # if newjob:
+            #     performative = newjob.get_metadata("performative")
+            #     if performative == "new_schedule" and newjob.body=="Reschedule":
+            #         print(newjob.body)
 
-                    self.set_next_state("Reschedule")
+            #         self.set_next_state("Reschedule")
 
     async def setup(self):
         fsm = self.AMRFSM()
@@ -235,6 +240,7 @@ class SchedulerAgent(Agent):
         fsm.add_transition(source="Send_Schedule", dest="RobotRegister")
         fsm.add_transition(source="Send_Schedule", dest="Reschedule")
         fsm.add_transition(source="Send_Schedule", dest="JobComplete")
+        fsm.add_transition(source="JobComplete", dest="JobComplete")
 
         self.add_behaviour(fsm)
 
@@ -263,6 +269,7 @@ if __name__ == "__main__":
     async def run():
         await scheduler_agent.start()
         print("SchedulerAgent started")
+        scheduler_agent.web.start(hostname="127.0.0.1", port="10000")
 
         try:
             while scheduler_agent.is_alive():

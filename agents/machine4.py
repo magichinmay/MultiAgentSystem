@@ -93,7 +93,7 @@ class MachineAgent(Agent):
                     self.agent.Completed_Jobs.append(completed_jobs)
 
                     # After processing, send a "Processing complete" message back to the sender
-                    response = Message(to=msg.sender)
+                    response = Message(to=str(msg.sender))
                     response.set_metadata("performative", "machine_reply")
                     response.body = "Processing complete"
                     await self.send(response)
