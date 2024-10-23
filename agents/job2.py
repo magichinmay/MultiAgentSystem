@@ -20,6 +20,7 @@ class JobAgent2(Agent):
         self.data=0
         self.x=True
         self.y=True
+        self.operations=[]
 
     class AMRFSM(FSMBehaviour):
         async def on_start(self):
@@ -49,6 +50,9 @@ class JobAgent2(Agent):
                             if isinstance(self.agent.data, list):
                                 print(f"Received Operations: {self.agent.data}")
                                 self.agent.x=False
+                                for i in (self.agent.data):
+                                    if i[1]!=0:
+                                        self.agent.operations.append(i)
                                 self.set_next_state("sendingcoordinates")
                             else:
                                 print("Error: Received data is not a valid coordinate.")
@@ -72,12 +76,12 @@ class JobAgent2(Agent):
                     await asyncio.sleep(2)
                     msg=Message(to=str(job.sender))
                     msg.set_metadata("performative","job_orders")
-                    coordinates=self.agent.data[self.agent.index]
+                    coordinates=self.agent.operations[self.agent.index]
                     msg.body = json.dumps(coordinates)
                     await self.send(msg)
                     print(f"Sending coordinate: {coordinates} to AMR")
 
-                    if self.agent.index < len(self.agent.data)-1:
+                    if self.agent.index < len(self.agent.operations)-1:
                         self.agent.index += 1
                         self.set_next_state("sendingcoordinates")
                     else:

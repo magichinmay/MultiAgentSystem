@@ -9,6 +9,8 @@ from geometry_msgs.msg import PoseStamped
 from rclpy.duration import Duration
 import rclpy
 from collections import deque
+import time
+
 if not rclpy.ok():  # Ensure rclpy.init() is called only once
     rclpy.init()
 
@@ -39,22 +41,26 @@ class AMR2(Agent):
             "machine3@jabber.fr":'2',
             "machine4@jabber.fr":'3'
         }
-        self.Machines= {
-            '0': 'machine1',
-            '1': 'machine2',
-            '2': 'machine3',
-            '3': 'machine4',
-            '-1': 'loading_dock',
-            '-2': 'unloading_dock'
-        }
+        self.Workstations = {
+                '0': 'machine1',
+                '1': 'machine2',
+                '2': 'machine3',
+                '3': 'machine4',
+                '-1': 'loading_dock',
+                '-2': 'unloading_dock'
+            }
         self.waiting_for_job=True
         self.going_to_loading=True
+        self.going_to_unloading=True
         self.loading=False
+        self.unloading=False     
         self.u=True
         self.idle=True
         self.travelling=True
         self.check_for_breakdown=False
         self.Mdock=False
+        self.machine_reply=None
+        self.MachineData=None
 
     class AMRFSM(FSMBehaviour):
         async def on_start(self):
@@ -127,38 +133,82 @@ class AMR2(Agent):
                 ask.set_metadata("performative", "ask")
                 ask.body = "load_the_job"
                 print(ask.body)
-                await self.send(ask)            
-                my_job=await self.receive(timeout=None)
+                await self.send(ask)
+                await asyncio.sleep(10)            
+                my_job=await self.receive(timeout=200)
                 if my_job:
-                    print("waiting for jobs")
+                    print("waiting for Loading Agent response")
                     performative = my_job.get_metadata("performative")
                     if performative=="loading" and my_job.body=="loading_completed":
+                        self.agent.loading=False
                         print("Job Loading Completed")
+                        self.agent.idle=True
                         self.set_next_state("Idle")
-                else:
-                    self.set_next_state("loading")
+                # else:
+                #     self.set_next_state("loading")
+
+    class Unloading(State):
+        async def run(self):
+            if self.agent.going_to_unloading==True:    
+                print("Going to Unoading Dock")
+                self.agent.machine = -2
+                self.agent.ptime = 3
+                self.set_next_state("Processing")
+
+            if self.agent.unloading==True:        
+                ask=Message(to="unloadingdock@jabber.fr")
+                ask.set_metadata("performative", "ask")
+                ask.body = "unload_the_job"
+                print(ask.body)
+                await self.send(ask)
+                await asyncio.sleep(5)            
+                my_job=await self.receive(timeout=200)
+                if my_job:
+                    print("waiting for Loading Agent response")
+                    performative = my_job.get_metadata("performative")
+                    if performative=="unloading" and my_job.body=="unloading_completed":
+                        self.agent.unloading=False
+                        print("Job Unloading Completed")
+                        if self.agent.remainingjobs==None:
+                            print("No Jobs remaining, going to dock")
+                            self.set_next_state("Dock")
+                        else:
+                             print("going to loading agent to process next job")
+                             self.agent.going_to_loading=True
+                             self.agent.loading=False
+                             self.set_next_state("loading")
+            #         else:
+            #             self.set_next_state("unloading")
+            # else:
+            #     self.set_next_state("unloading")
 
 
     class Idle(State):
         async def run(self):
             if self.agent.check_for_breakdown==True:
                 print("Checking for any Breakdown issue")
-                breakdown_msg=await self.receive(timeout=20)
+                breakdown_msg=await self.receive(timeout=10)
                 if breakdown_msg:
                     performative = breakdown_msg.get_metadata("performative")
                     if performative=="user_input" and breakdown_msg.body=="Breakdown":
                         self.set_next_state("Breakdown")
+                else:
+                    print("No Breakdown")
+                    self.agent.idle=False
+                    self.agent.travelling=True
+                    self.set_next_state("unloading")
 
             else:
                 if self.agent.remainingjobs:
                     while self.agent.idle==True:
-                        reply = Message(to=self.agent.JobsAgents[self.agent.remainingjobs[0]])
+                        await asyncio.sleep(4)
+                        reply = Message(to=self.agent.JobsAgents[str(self.agent.remainingjobs[0])])
                         reply.set_metadata("performative", "ask_for_op")
                         reply.body = "Idle"
                         await self.send(reply)
-                        print("Sent Idle status to Job Agent.")
-                        await asyncio.sleep(1)
-                        msg = await self.receive(timeout=10)
+                        print("Sent Idle status to Job Agent", self.agent.JobsAgents[str(self.agent.remainingjobs[0])])
+                        
+                        msg = await self.receive(timeout=25)
                         if msg:
                             performative = msg.get_metadata("performative")
                             if performative == "job_orders":
@@ -167,70 +217,69 @@ class AMR2(Agent):
                                     machine=data2[0]
                                     ptime=data2[1]
                                     # MachineData=[self.agent.RRJobAgents[self.agent.JobsAgents[self.agent.remainingjobs[0]]],ptime]
-                                    MachineData=[self.agent.remainingjobs[0],ptime]
+                                    self.agent.MachineData=[self.agent.remainingjobs[0],ptime]
                                     print(f"Received coordinates: {machine}")
                                     askmachine = Message(to=self.agent.MachineAgents[str(machine)])
-                                    askmachine.set_metadata("performative", "ask_machine") 
-                                    askmachine.body = "canIcome"
+                                    askmachine.set_metadata("performative", "ask_machine_for_processing") 
+                                    askmachine.body = str(self.agent.MachineData[0])
                                     await self.send(askmachine)
-                                    await asyncio.sleep(4)
-                                    machine_reply=await self.receive(timeout=None)
-                                    if machine_reply:
-                                        performative=machine_reply.get_metadata("performative")
-                                        if performative=="machine_reply" and machine_reply.body=="Yes":
-                                            self.agent.idle=False
-                                            #checkout for error
-                                            self.agent.machine = self.agent.RMachineAgents[self.agent.MachineAgents[self.agent.remainingjobs[0]]]
-                                            self.agent.ptime = ptime
-                                            self.set_next_state("Processing")
-                                        elif performative=="machine_reply" and machine_reply=="Come to Machine Dock":
-                                            self.agent.dock=True
-                                    else:
-                                        self.set_next_state("Idle")     
+                                    print('confirming idle machine from',self.agent.MachineAgents[str(machine)])
+                                    await asyncio.sleep(1)
+
+                                    # machine_reply=await self.receive(timeout=120)
+                                    # print('got machine reply', machine_reply.body, 'from ', machine_reply.sender)
+                                    # if machine_reply and machine_reply.sender.bare in self.agent.RMachineAgents.keys():
+                                    #     self.agent.machine_reply=machine_reply.sender
+                                    #     performative=machine_reply.get_metadata("performative")
+                                    #     if performative=="machine_reply" and machine_reply.body=="Yes":
+
+
+                                    self.agent.idle=False
+                                    #checkout for error
+                                    print('machine:', machine)
+                                    self.agent.machine = machine
+                                    self.agent.ptime = ptime
+                                    self.set_next_state("Processing")
+
+                                    # else:
+                                    #     self.set_next_state("Idle")  
+                                    
+                       
                                 except json.JSONDecodeError:
                                     print("Error: Unable to decode message body as JSON.")
                                     self.set_next_state("Idle")
 
                             elif performative=="inform_amr" and msg.body=="tasks are done":
+                                print("received task completed msg from",msg.sender)
                                 self.agent.remainingjobs.popleft()
-                                print("Going to Unloading Dock")
-                                self.agent.machine = -2
-                                self.agent.ptime = 3
-                                self.set_next_state("Processing")
+                                self.agent.idle=False
+                                self.agent.going_to_unloading=True
+                                self.agent.travelling=True
+                                self.agent.unloading=False
+                                self.set_next_state("unloading")
                         else:
                             print("No Message Received")
                             self.set_next_state("Idle")
 
                     while self.agent.travelling==False:
                         await asyncio.sleep(2)            
-                        tellmachine=Message(to=machine_reply.sender)
+                        tellmachine=Message(to=self.agent.MachineAgents[str(self.agent.machine)])
                         tellmachine.set_metadata("performative","waiting_for_machine_to_process")
-                        tellmachine.body=json.dumps(MachineData)
+                        tellmachine.body="Ready"
+                        print("sending",tellmachine.body,"to machine",self.agent.MachineAgents[str(self.agent.machine)])
                         await self.send(tellmachine)
                         await asyncio.sleep(1)
                         machine_finish=await self.receive(timeout=60)
                         if machine_finish:
                             performative=machine_finish.get_metadata("performative")
-                            if performative=="machine_finish" and machine_finish.body=="machingdone":
+                            print("Machine Processing")
+                            if performative=="machine_reply" and machine_finish.body=="Processing complete":
                                 print("Maching Processing completed")
                                 self.agent.travelling=True
                                 self.agent.idle=True
                                 self.set_next_state("Idle")
                         else:
                             self.set_next_state("Idle")
-
-                    while self.agent.dock==True:
-                        msg2=await self.receive(timeout=None)
-                        if msg2:
-                            performative=msg2.get_metadata("performative")
-                            if performative=="machine_reply" and msg2.body=="Yes":
-                                self.agent.idle=False
-                                self.agent.dock=False
-                                #checkout for error
-                                self.agent.machine = self.agent.RMachineAgents[self.agent.MachineAgents[self.agent.remainingjobs[0]]]
-                                self.agent.ptime = ptime
-                                self.set_next_state("Processing")
-
 
 
 
@@ -247,23 +296,32 @@ class AMR2(Agent):
 
     class Processing(State):
         async def run(self):
-            print("Going to",self.agent.Workstations[self.agent.machine])
+            print("Going to",self.agent.Workstations[str(self.agent.machine)])
             pose=self.agent.machine
 
+
             m1 = [-3.32, 6.65]
+            m1_Mdock=[-4.5,7.43]
             m2 = [-3.38, 1.46]
+            m2_Mdock=[-4.5,0.47]
             m3 = [1.627, 6.459]
+            m3_Mdock=[0.55,7.5]
             m4 = [1.681, 1.407]
-            loading_dock = [-6.69, 4.028]
-            unloading_dock = [3.52, 3.96]
+            m4_Mdock=[0.55,0.002]
+            loading_Mdock = [-6.69, 4.028]
+            unloading_Mdock = [3.52, 3.96]
 
             poses = {
                 '0': m1,
+                '0d':m1_Mdock,
                 '1': m2,
+                '1d':m2_Mdock,
                 '2': m3,
+                '2d':m3_Mdock,
                 '3': m4,
-                '-1': loading_dock,
-                '-2': unloading_dock
+                '3d':m4_Mdock,
+                '-1': loading_Mdock,
+                '-2': unloading_Mdock
             }
 
             goal_pose = PoseStamped()
@@ -272,9 +330,12 @@ class AMR2(Agent):
             goal_pose.pose.position.x = poses[str(pose)][0]
             goal_pose.pose.position.y = poses[str(pose)][1] 
             goal_pose.pose.orientation.w = 1.0
+            print("start navigation")
 
             self.agent.navigator.goToPose(goal_pose)
-
+            while not self.agent.navigator.isTaskComplete():
+                time.sleep(1)
+            print("give result")
             result = self.agent.navigator.getResult()
             if result == TaskResult.SUCCEEDED:
                 if self.agent.machine==-1:
@@ -282,20 +343,23 @@ class AMR2(Agent):
                     self.agent.going_to_loading=False
                     self.agent.loading=True
                     self.set_next_state("loading")
+
                 elif self.agent.machine==-2:
                     print("Reached Unloading Dock")
-                    self.agent.check_for_breakdown=True
-                    if self.agent.remainingjobs==None:
-                        self.set_next_state("Dock")
-                    else:
-                        self.set_next_state("Idle")
+                    # self.agent.check_for_breakdown=True
+                    self.agent.going_to_unloading=False
+                    self.agent.unloading=True
+                    self.set_next_state("unloading")
+
                 else:
                     print(f"Reached Machine: {self.agent.machine}") 
                     self.agent.travelling=False
                     self.set_next_state("Idle")  # Return to Idle after processing
+
             elif result == TaskResult.CANCELED:
                 print('Inspection of shelving was canceled. Returning to start...')
                 exit(1)
+                
             elif result == TaskResult.FAILED:
                 print('Inspection of shelving failed! Returning to start...')
             
@@ -312,12 +376,14 @@ class AMR2(Agent):
 
     class Dock(State):
         async def run(self):
-            print("Going to Docking station")
-            msg1 = await self.receive(timeout=None)
-            if msg1:
-                performative = msg1.get_metadata("performative")
-                if performative == "inform" and msg1.body=="New Schedule":   
-                    self.set_next_state("Idle")
+            print("In Dock")
+            await asyncio.sleep(10) 
+            self.set_next_state("Dock")
+            # msg1 = await self.receive(timeout=None)
+            # if msg1:
+            #     performative = msg1.get_metadata("performative")
+            #     if performative == "inform" and msg1.body=="New Schedule":   
+            #         self.set_next_state("Idle")
 
     async def setup(self):
         self.navigator = BasicNavigator(namespace="robot2")
@@ -326,6 +392,7 @@ class AMR2(Agent):
         fsm.add_state(name="Ready", state=self.Ready(), initial=True)
         fsm.add_state(name="waitingfor_jobset", state=self.waitingfor_jobset())
         fsm.add_state(name="loading", state=self.Loading())
+        fsm.add_state(name="unloading", state=self.Unloading())
         fsm.add_state(name="Idle", state=self.Idle())
         fsm.add_state(name="Dock", state=self.Dock())
         fsm.add_state(name="Processing", state=self.Processing())
@@ -351,6 +418,13 @@ class AMR2(Agent):
         fsm.add_transition(source="Idle", dest="Breakdown")
         fsm.add_transition(source="Breakdown", dest="Idle")
         fsm.add_transition(source="Processing", dest="Breakdown")
+
+        fsm.add_transition(source="Processing", dest="unloading")
+        fsm.add_transition(source="unloading", dest="Processing")
+        fsm.add_transition(source="unloading", dest="Dock")
+        fsm.add_transition(source="unloading", dest="loading")
+        fsm.add_transition(source="unloading", dest="unloading")
+        fsm.add_transition(source="Idle", dest="unloading")
 
         fsm.add_transition(source="Idle", dest="Dock")
         fsm.add_transition(source="Dock", dest="Idle")
@@ -383,6 +457,7 @@ if __name__ == "__main__":
 
     async def run():
         await amr2.start()
+        amr2.web.start(hostname="127.0.0.1", port="10001")
         print("AMR2 started")
 
         try:
