@@ -61,6 +61,8 @@ class AMR2(Agent):
         self.Mdock=False
         self.machine_reply=None
         self.MachineData=None
+        self.unloading_dock_response=False 
+        self.dock=False
 
     class AMRFSM(FSMBehaviour):
         async def on_start(self):
@@ -149,11 +151,28 @@ class AMR2(Agent):
 
     class Unloading(State):
         async def run(self):
-            if self.agent.going_to_unloading==True:    
-                print("Going to Unoading Dock")
-                self.agent.machine = -2
-                self.agent.ptime = 3
-                self.set_next_state("Processing")
+            if self.agent.going_to_unloading==True:
+                # print("Going to Unoading Dock")
+                while self.agent.unloading_dock_response==False:
+                    ask=Message(to="unloadingdock@jabber.fr")
+                    ask.set_metadata("performative", "ask")
+                    ask.body = "need to unload"
+                    print(ask.body)
+                    await self.send(ask)
+                    my_job=await self.receive(timeout=200)
+                    if my_job:
+                        if my_job.get_metadata("performative") == "unload" and my_job.body == "come to unloading dock":
+                            self.agent.unloading_dock_response=True
+                            self.agent.machine = -2
+                            # self.agent.ptime = 3
+                            self.set_next_state("Processing")
+
+                        elif my_job.get_metadata("performative") == "unload" and my_job.body == "come to unloading Q dock":
+                            self.agent.unloading_dock_response=True
+                            self.agent.machine = -22
+                            # self.agent.ptime = 3
+                            self.set_next_state("Processing")
+
 
             if self.agent.unloading==True:        
                 ask=Message(to="unloadingdock@jabber.fr")
@@ -308,8 +327,12 @@ class AMR2(Agent):
             m3_Mdock=[0.55,7.5]
             m4 = [1.681, 1.407]
             m4_Mdock=[0.55,0.002]
-            loading_Mdock = [-6.69, 4.028]
-            unloading_Mdock = [3.52, 3.96]
+            loading_dock = [-6.69, 4.028]
+            unloading_dock = [3.52, 3.96]
+            unloading_Q_dock=[4.36,0.79]
+            robot2_charging_dock=[-7.47,0.86]
+            robot2_charging_dock=[-7.47,7.22]
+            robot3_charging_dock=[4.28,7.41]
 
             poses = {
                 '0': m1,
@@ -320,8 +343,12 @@ class AMR2(Agent):
                 '2d':m3_Mdock,
                 '3': m4,
                 '3d':m4_Mdock,
-                '-1': loading_Mdock,
-                '-2': unloading_Mdock
+                '-1':loading_dock,
+                '-2':unloading_dock,
+                '-22':unloading_Q_dock,
+                '11':robot2_charging_dock,
+                '22':robot2_charging_dock,
+                '33':robot3_charging_dock
             }
 
             goal_pose = PoseStamped()
@@ -351,6 +378,18 @@ class AMR2(Agent):
                     self.agent.unloading=True
                     self.set_next_state("unloading")
 
+                elif self.agent.machine==-22:
+                    print("Reached unloading dock Queue")
+                    self.agent.unloading_dock_response=False
+                    self.agent.going_to_unloading=True
+                    self.agent.unloading=False
+                    self.set_next_state("unloading")
+
+                elif self.agent.machine==22:
+                    print("Reached charging dock")
+                    self.agent.dock=True
+                    self.set_next_state("Dock")
+
                 else:
                     print(f"Reached Machine: {self.agent.machine}") 
                     self.agent.travelling=False
@@ -374,16 +413,23 @@ class AMR2(Agent):
             print("Breakdown message sent to another agent.")
             self.set_next_state("Idle")
 
+
     class Dock(State):
         async def run(self):
             print("In Dock")
-            await asyncio.sleep(10) 
-            self.set_next_state("Dock")
-            # msg1 = await self.receive(timeout=None)
-            # if msg1:
-            #     performative = msg1.get_metadata("performative")
-            #     if performative == "inform" and msg1.body=="New Schedule":   
-            #         self.set_next_state("Idle")
+            if self.agent.dock==False:
+                self.agent.machine==22
+                self.set_next_state("Processing")
+            else:
+                my_job=await self.receive(timeout=100)
+                if my_job:
+                    if my_job.get_metadata("performative") == "new_job" and my_job.body == "get ready":
+                        self.set_next_state("Ready")
+                    else:
+                        self.set_next_state("Dock")
+                else:
+                    self.set_next_state("Dock")
+
 
     async def setup(self):
         self.navigator = BasicNavigator(namespace="robot2")
@@ -429,6 +475,7 @@ class AMR2(Agent):
         fsm.add_transition(source="Idle", dest="Dock")
         fsm.add_transition(source="Dock", dest="Idle")
         fsm.add_transition(source="Dock", dest="Dock")
+        fsm.add_transition(source="Dock", dest="Ready")
 
         self.add_behaviour(fsm)
 
