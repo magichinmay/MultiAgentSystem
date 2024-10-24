@@ -12,7 +12,7 @@ from collections import deque
 # Define the states
 INIT = "INIT"
 IDLE = "IDLE"
-# LOADING = "LOADING"
+LOADING = "LOADING"
 # INFORM = "INFORM"
 
 
@@ -49,48 +49,57 @@ class LoadingDockAgent(Agent):
             msg = await self.receive(timeout=30)
             if msg:
                 # self.agent.sender_jid =self.agent.RAmrAgents[msg.sender.bare]
-                if msg.get_metadata("performative") == "ask":
-                    if msg.body == "my_job_set":
-                        print(msg.sender,"requesting job set")
-                        self.agent.num_amrs_registered += 1
-                        job_set = self.agent.remaining_job_sets.popleft()
-                        self.agent.assigned_job_sets = job_set
+                if msg.get_metadata("performative") == "ask" and msg.body == "my_job_set":
+                    print(msg.sender,"requesting job set")
+                    self.agent.num_amrs_registered += 1
+                    job_set = self.agent.remaining_job_sets.popleft()
+                    self.agent.assigned_job_sets = job_set
 
-                        call_msg = Message(to=str(msg.sender))
-                        call_msg.set_metadata("performative", "loading_dock_ready")
-                        call_msg.body = json.dumps(job_set)
-                        await self.send(call_msg)
-                        print("sent job set",job_set,"to",msg.sender)
-                        self.set_next_state(IDLE)
+                    call_msg = Message(to=str(msg.sender))
+                    call_msg.set_metadata("performative", "loading_dock_ready")
+                    call_msg.body = json.dumps(job_set)
+                    await self.send(call_msg)
+                    print("sent job set",job_set,"to",msg.sender)
+                    self.set_next_state(LOADING)
 
-                    elif msg.body == "load_the_job":
-                        print("Loading in Progress")
-                        # Implement the job informing logic here
-                        await asyncio.sleep(5)
-                        loading_response = Message(to=str(msg.sender))
-                        loading_response.set_metadata("performative", "loading")
-                        loading_response.body = "loading_completed"
-                        await self.send(loading_response)
-
-                        self.set_next_state(IDLE)
+                    # elif msg.body == "load_the_job":
+                    #     print("Loading in Progress")
+                    #     # Implement the job informing logic here
+                    #     await asyncio.sleep(5)
+                    #     loading_response = Message(to=str(msg.sender))
+                    #     loading_response.set_metadata("performative", "loading")
+                    #     loading_response.body = "loading_completed"
+                    #     await self.send(loading_response)
+                else:
+                    print("Msg recived does not match")
+                    self.set_next_state(IDLE)               
             else:
                 print("No message received.")
                 self.set_next_state(IDLE)
 
-    # class LoadingState(State):
-    #     async def run(self):
-    #         print("LOADING state: the remaining jobs are", self.agent.remaining_job_sets)
-    #         # Implement the job loading logic here
-    #         # After loading, transition back to IDLE state
-    #         self.agent.num_amrs_registered += 1
-    #         job_set = self.agent.remaining_job_sets.popleft()
-    #         self.agent.assigned_job_sets = job_set
-    #         call_msg = Message(to=self.agent.AmrAgents[self.agent.sender_jid])
-    #         call_msg.set_metadata("performative", "loading_dock_ready")
-    #         call_msg.body = json.dumps(job_set)
-    #         await self.send(call_msg)
-    #         print("sent job set",job_set,"to",self.agent.AmrAgents[self.agent.sender_jid])
-    #         self.set_next_state(IDLE)
+    class LoadingState(State):
+        async def run(self):
+            print("Loading state: Listening for amr messages ")
+            msg = await self.receive(timeout=30)
+            if msg:
+                # self.agent.sender_jid =self.agent.RAmrAgents[msg.sender.bare]
+                if msg.get_metadata("performative") == "ask" and msg.body == "load_the_job":
+                    print("Loading in Progress")
+                    # Implement the job informing logic here
+                    await asyncio.sleep(7)
+                    loading_response = Message(to=str(msg.sender))
+                    loading_response.set_metadata("performative", "loading")
+                    loading_response.body = "loading_completed"
+                    await self.send(loading_response)
+                    self.set_next_state(IDLE)
+                else:
+                    print("Msg recived does not match")
+                    self.set_next_state(LOADING)               
+            else:
+                print("No message received.")
+                self.set_next_state(LOADING)                
+
+
 
     # class InformState(State):
     #     async def run(self):
@@ -128,14 +137,15 @@ class LoadingDockAgent(Agent):
 
         fsm.add_state(name=INIT, state=self.InitState(), initial=True)
         fsm.add_state(name=IDLE, state=self.IdleState())
-        # fsm.add_state(name=LOADING, state=self.LoadingState())
+        fsm.add_state(name=LOADING, state=self.LoadingState())
         # fsm.add_state(name=INFORM, state=self.InformState())
 
         fsm.add_transition(source=INIT, dest=IDLE)
         fsm.add_transition(source=INIT, dest=INIT)
-        # fsm.add_transition(source=IDLE, dest=LOADING)
+        fsm.add_transition(source=IDLE, dest=LOADING)
+        fsm.add_transition(source=LOADING, dest=LOADING)
+        fsm.add_transition(source=LOADING, dest=IDLE)
         # fsm.add_transition(source=IDLE, dest=INFORM)
-        # fsm.add_transition(source=LOADING, dest=IDLE)
         # fsm.add_transition(source=INFORM, dest=IDLE)
         fsm.add_transition(source=IDLE, dest=IDLE)
         fsm.add_transition(source=IDLE, dest=INIT)

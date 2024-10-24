@@ -12,7 +12,7 @@ from collections import deque
 # Define the states
 INIT = "INIT"
 IDLE = "IDLE"
-# LOADING = "LOADING"
+UNLOADING = "UNLOADING"
 # INFORM = "INFORM"
 
 
@@ -45,40 +45,66 @@ class LoadingDockAgent(Agent):
 
     class IdleState(State):
         async def run(self):
-            print("IDLE state: Listening for amr messages ")
+            while self.agent.unloading_Q_dock==False:
+                print("IDLE state: Listening for amr messages ")
+                msg = await self.receive(timeout=30)
+                if msg:
+                    # self.agent.sender_jid =self.agent.RAmrAgents[msg.sender.bare]
+                    if msg.get_metadata("performative") == "ask" and msg.body == "need to unload":
+                        # Implement the job informing logic here
+                        unloading_response = Message(to=str(msg.sender))
+                        unloading_response.set_metadata("performative", "unload")
+                        unloading_response.body = "come to unloading dock"
+                        await self.send(unloading_response)
+                        # print("Unloading completed")
+                        self.set_next_state(UNLOADING)
+                    else:
+                        self.set_next_state(IDLE)
+                else:
+                    print("No message received.")
+                    self.set_next_state(IDLE)
+
+            while self.agent.unloading_Q_dock==True:
+                unloading_response = Message(to=str(self.agent.Q_amr))
+                unloading_response.set_metadata("performative", "unload")
+                unloading_response.body = "come to unloading dock"
+                await self.send(unloading_response)
+                self.agent.unloading_Q_dock=False
+                self.set_next_state(UNLOADING)
+
+
+
+    class UnloadingState(State):
+        async def run(self):
+            print("UNLOADING state: Listening for amr messages ")
             msg = await self.receive(timeout=30)
             if msg:
                 # self.agent.sender_jid =self.agent.RAmrAgents[msg.sender.bare]
-                if msg.get_metadata("performative") == "ask" and msg.body == "unload_the_job":
-                    print("Unloading in Progress")
-                    # Implement the job informing logic here
-                    await asyncio.sleep(5)
-                    loading_response = Message(to=str(msg.sender))
-                    loading_response.set_metadata("performative", "unloading")
-                    loading_response.body = "unloading_completed"
-                    await self.send(loading_response)
-                    print("Unloading completed")
+                if msg.get_metadata("performative") == "ask" and msg.body == "need to unload":
+                    unloading_response = Message(to=str(msg.sender))
+                    unloading_response.set_metadata("performative", "unload")
+                    unloading_response.body = "come to unloading Q dock"
+                    await self.send(unloading_response)
+                    self.agent.Q_amr=msg.sender.bare
+                    self.agent.unloading_Q_dock=True
+                    # print("Unloading completed")
+                    self.set_next_state(UNLOADING)
+
+                elif msg.get_metadata("performative") == "ask" and msg.body == "unload the job":
+                    await asyncio.sleep(7)
+                    unloading_response = Message(to=str(msg.sender))
+                    unloading_response.set_metadata("performative", "unload")
+                    unloading_response.body = "unloading completed"
+                    await self.send(unloading_response)
+                    # print("Unloading completed")
                     self.set_next_state(IDLE)
                 else:
-                    self.set_next_state(IDLE)
+                     self.set_next_state(UNLOADING)
             else:
-                print("No message received.")
-                self.set_next_state(IDLE)
+                 print("No message received.")
+                 self.set_next_state(UNLOADING)                  
 
-    # class LoadingState(State):
-    #     async def run(self):
-    #         print("LOADING state: the remaining jobs are", self.agent.remaining_job_sets)
-    #         # Implement the job loading logic here
-    #         # After loading, transition back to IDLE state
-    #         self.agent.num_amrs_registered += 1
-    #         job_set = self.agent.remaining_job_sets.popleft()
-    #         self.agent.assigned_job_sets = job_set
-    #         call_msg = Message(to=self.agent.AmrAgents[self.agent.sender_jid])
-    #         call_msg.set_metadata("performative", "loading_dock_ready")
-    #         call_msg.body = json.dumps(job_set)
-    #         await self.send(call_msg)
-    #         print("sent job set",job_set,"to",self.agent.AmrAgents[self.agent.sender_jid])
-    #         self.set_next_state(IDLE)
+
 
     # class InformState(State):
     #     async def run(self):
@@ -101,6 +127,9 @@ class LoadingDockAgent(Agent):
         self.sender_jid = None
         self.Init=True
 
+        self.Q_amr=None
+        self.unloading_Q_dock=False
+
         self.AmrAgents={
             '0':"robot1@jabber.fr",
             '1':"robot2@jabber.fr",
@@ -116,14 +145,14 @@ class LoadingDockAgent(Agent):
 
         fsm.add_state(name=INIT, state=self.InitState())
         fsm.add_state(name=IDLE, state=self.IdleState(),initial=True)
-        # fsm.add_state(name=LOADING, state=self.LoadingState())
+        fsm.add_state(name=UNLOADING, state=self.UnloadingState())
         # fsm.add_state(name=INFORM, state=self.InformState())
 
         fsm.add_transition(source=INIT, dest=IDLE)
         fsm.add_transition(source=INIT, dest=INIT)
-        # fsm.add_transition(source=IDLE, dest=LOADING)
+        fsm.add_transition(source=IDLE, dest=UNLOADING)
         # fsm.add_transition(source=IDLE, dest=INFORM)
-        # fsm.add_transition(source=LOADING, dest=IDLE)
+        fsm.add_transition(source=UNLOADING, dest=IDLE)
         # fsm.add_transition(source=INFORM, dest=IDLE)
         fsm.add_transition(source=IDLE, dest=IDLE)
         fsm.add_transition(source=IDLE, dest=INIT)
