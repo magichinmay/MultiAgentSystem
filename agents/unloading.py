@@ -90,11 +90,11 @@ class LoadingDockAgent(Agent):
                     # print("Unloading completed")
                     self.set_next_state(UNLOADING)
 
-                elif msg.get_metadata("performative") == "ask" and msg.body == "unload the job":
+                elif msg.get_metadata("performative") == "ask" and msg.body == "unload_the_job":
                     await asyncio.sleep(7)
                     unloading_response = Message(to=str(msg.sender))
-                    unloading_response.set_metadata("performative", "unload")
-                    unloading_response.body = "unloading completed"
+                    unloading_response.set_metadata("performative", "unloading")
+                    unloading_response.body = "unloading_completed"
                     await self.send(unloading_response)
                     # print("Unloading completed")
                     self.set_next_state(IDLE)
