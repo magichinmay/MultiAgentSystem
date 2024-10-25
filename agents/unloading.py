@@ -19,10 +19,10 @@ UNLOADING = "UNLOADING"
 class LoadingDockAgent(Agent):
     class LoadingDockBehaviour(FSMBehaviour):
         async def on_start(self):
-            print("LoadingDock FSM starting.")
+            print("UnloadingDock FSM starting.")
         
         async def on_end(self):
-            print("LoadingDock FSM finished.")
+            print("UnloadingDock FSM finished.")
             await self.agent.stop()
 
     class InitState(State):
@@ -45,7 +45,7 @@ class LoadingDockAgent(Agent):
 
     class IdleState(State):
         async def run(self):
-            while self.agent.unloading_Q_dock==False:
+            if self.agent.unloading_Q_dock==False:
                 print("IDLE state: Listening for amr messages ")
                 msg = await self.receive(timeout=30)
                 if msg:
@@ -64,7 +64,7 @@ class LoadingDockAgent(Agent):
                     print("No message received.")
                     self.set_next_state(IDLE)
 
-            while self.agent.unloading_Q_dock==True:
+            if self.agent.unloading_Q_dock==True:
                 unloading_response = Message(to=str(self.agent.Q_amr))
                 unloading_response.set_metadata("performative", "unload")
                 unloading_response.body = "come to unloading dock"
@@ -151,6 +151,7 @@ class LoadingDockAgent(Agent):
         fsm.add_transition(source=INIT, dest=IDLE)
         fsm.add_transition(source=INIT, dest=INIT)
         fsm.add_transition(source=IDLE, dest=UNLOADING)
+        fsm.add_transition(source=UNLOADING, dest=UNLOADING)
         # fsm.add_transition(source=IDLE, dest=INFORM)
         fsm.add_transition(source=UNLOADING, dest=IDLE)
         # fsm.add_transition(source=INFORM, dest=IDLE)

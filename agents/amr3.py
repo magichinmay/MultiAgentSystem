@@ -47,7 +47,8 @@ class AMR3(Agent):
                 '2': 'machine3',
                 '3': 'machine4',
                 '-1': 'loading_dock',
-                '-2': 'unloading_dock'
+                '-2': 'unloading_dock',
+                '-22':'unloading_Q_dock'
             }
         self.waiting_for_job=True
         self.going_to_loading=True
@@ -330,8 +331,8 @@ class AMR3(Agent):
             loading_dock = [-6.69, 4.028]
             unloading_dock = [3.52, 3.96]
             unloading_Q_dock=[4.36,0.79]
-            robot3_charging_dock=[-7.47,0.86]
-            robot3_charging_dock=[-7.47,7.22]
+            robot1_charging_dock=[-7.47,0.86]
+            robot2_charging_dock=[-7.47,7.22]
             robot3_charging_dock=[4.28,7.41]
 
             poses = {
@@ -346,8 +347,8 @@ class AMR3(Agent):
                 '-1':loading_dock,
                 '-2':unloading_dock,
                 '-22':unloading_Q_dock,
-                '11':robot3_charging_dock,
-                '22':robot3_charging_dock,
+                '11':robot1_charging_dock,
+                '22':robot2_charging_dock,
                 '33':robot3_charging_dock
             }
 

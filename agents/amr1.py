@@ -47,7 +47,8 @@ class AMR1(Agent):
                 '2': 'machine3',
                 '3': 'machine4',
                 '-1': 'loading_dock',
-                '-2': 'unloading_dock'
+                '-2': 'unloading_dock',
+                '-22':'unloading_Q_dock'
             }
         self.waiting_for_job=True
         self.going_to_loading=True
@@ -271,6 +272,7 @@ class AMR1(Agent):
                             elif performative=="inform_amr" and msg.body=="tasks are done":
                                 print("received task completed msg from",msg.sender)
                                 self.agent.remainingjobs.popleft()
+                                print(self.agent.remainingjobs,"are remaining jobs")
                                 self.agent.idle=False
                                 self.agent.going_to_unloading=True
                                 self.agent.travelling=True
