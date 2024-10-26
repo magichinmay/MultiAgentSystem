@@ -505,7 +505,7 @@ if __name__ == "__main__":
 
     async def run():
         await amr3.start()
-        amr3.web.start(hostname="127.0.0.1", port="10001")
+        # amr3.web.start(hostname="127.0.0.1", port="10001")
         print("AMR3 started")
 
         try:

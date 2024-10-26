@@ -14,7 +14,7 @@ import time
 if not rclpy.ok():  # Ensure rclpy.init() is called only once
     rclpy.init()
 
-class AMR2(Agent):
+class AMR4(Agent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.remainingjobs=deque()
@@ -67,18 +67,18 @@ class AMR2(Agent):
 
     class AMRFSM(FSMBehaviour):
         async def on_start(self):
-            print("AMR2 FSM started.")
+            print("AMR4 FSM started.")
 
         async def on_end(self):
-            print("AMR2 FSM finished.")
+            print("AMR4 FSM finished.")
 
     class Ready(State):
         async def run(self):
             await asyncio.sleep(8)
-            print("AMR2 is Ready")
+            print("AMR4 is Ready")
             register = Message(to="scheduler@jabber.fr")
             register.set_metadata("performative", "Register")
-            register.body = "robot2@jabber.fr"
+            register.body = "robot3@jabber.fr"
             await self.send(register)  # Sending the register message
             await asyncio.sleep(2)
             msg1 = await self.receive(timeout=None)
@@ -334,6 +334,7 @@ class AMR2(Agent):
             robot1_charging_dock=[-7.47,0.86]
             robot2_charging_dock=[-7.47,7.22]
             robot3_charging_dock=[4.28,7.41]
+            robot4_charging_dock=[]
 
             poses = {
                 '0': m1,
@@ -349,7 +350,8 @@ class AMR2(Agent):
                 '-22':unloading_Q_dock,
                 '11':robot1_charging_dock,
                 '22':robot2_charging_dock,
-                '33':robot3_charging_dock
+                '33':robot3_charging_dock,
+                '44':robot4_charging_dock
             }
 
             goal_pose = PoseStamped()
@@ -386,7 +388,7 @@ class AMR2(Agent):
                     self.agent.unloading=False
                     self.set_next_state("unloading")
 
-                elif self.agent.machine==22:
+                elif self.agent.machine==33:
                     print("Reached charging dock")
                     self.agent.dock=True
                     self.set_next_state("Dock")
@@ -409,7 +411,7 @@ class AMR2(Agent):
             print("State: Breakdown. Sending JID of assistance agent...")
             msg = Message(to="scheduler@jabber.fr")
             msg.set_metadata("performative", "Breakdown: please assist")
-            msg.body = "robot2@jabber.fr"
+            msg.body = "robot3@jabber.fr"
             await self.send(msg)
             print("Breakdown message sent to another agent.")
             self.set_next_state("Idle")
@@ -419,7 +421,7 @@ class AMR2(Agent):
         async def run(self):
             print("In Dock")
             if self.agent.dock==False:
-                self.agent.machine==22
+                self.agent.machine==33
                 self.set_next_state("Processing")
             else:
                 my_job=await self.receive(timeout=100)
@@ -433,7 +435,7 @@ class AMR2(Agent):
 
 
     async def setup(self):
-        self.navigator = BasicNavigator(namespace="robot2")
+        self.navigator = BasicNavigator(namespace="robot3")
         fsm = self.AMRFSM()
         #All the States
         fsm.add_state(name="Ready", state=self.Ready(), initial=True)
@@ -487,7 +489,7 @@ class AMR2(Agent):
     def version_query_handler(self, iq):
         iq.make_result()
         version_data = version.xso.Query()
-        version_data.name = "AMR2"
+        version_data.name = "AMR4"
         version_data.version = "1.0"
         iq.payload = version_data
         return iq
@@ -501,17 +503,17 @@ class AMR2(Agent):
 
 
 if __name__ == "__main__":
-    amr2 = AMR2("robot2@jabber.fr", "changeme")
+    amr4 = AMR4("robot3@jabber.fr", "changeme")
 
     async def run():
-        await amr2.start()
-        # amr2.web.start(hostname="127.0.0.1", port="10001")
-        print("AMR2 started")
+        await amr4.start()
+        # amr4.web.start(hostname="127.0.0.1", port="10001")
+        print("AMR4 started")
 
         try:
-            while amr2.is_alive():
+            while amr4.is_alive():
                 await asyncio.sleep(1)
         except KeyboardInterrupt:
-            await amr2.stop()
+            await amr4.stop()
 
     asyncio.run(run())

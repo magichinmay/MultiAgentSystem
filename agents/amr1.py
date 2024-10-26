@@ -321,20 +321,22 @@ class AMR1(Agent):
             pose=self.agent.machine
 
 
-            m1 = [-3.32, 6.65]
-            m1_Mdock=[-4.5,7.43]
-            m2 = [-3.38, 1.46]
-            m2_Mdock=[-4.5,0.47]
-            m3 = [1.627, 6.459]
-            m3_Mdock=[0.55,7.5]
-            m4 = [1.681, 1.407]
-            m4_Mdock=[0.55,0.002]
-            loading_dock = [-6.69, 4.028]
-            unloading_dock = [3.52, 3.96]
-            unloading_Q_dock=[4.36,0.79]
-            robot1_charging_dock=[-7.47,0.86]
-            robot2_charging_dock=[-7.47,7.22]
-            robot3_charging_dock=[4.28,7.41]
+            m1 = [-4.5,8.3]
+            m1_Mdock=[-4.5,11]
+            m2 = [-4.5, 2.9]
+            m2_Mdock=[-4.5,-0.06]
+            m3 = [1.5, 8.3]
+            m3_Mdock=[1.5,11]
+            m4 = [1.5,2,7 ]
+            m4_Mdock=[1.5,-0.04]
+            loading_dock = [-9.15,5,11]
+            loading_Q_dock = [-10,9.4]
+            unloading_dock = [7.32,5.2]
+            unloading_Q_dock=[9.5,0.637]
+            robot1_charging_dock=[-6.5,-6.8]
+            robot2_charging_dock=[-8.53,-7.03]
+            robot3_charging_dock=[-10.09,-6.84]
+            robot4_charging_dock=[-11.08,-4.77]
 
             poses = {
                 '0': m1,
@@ -346,11 +348,13 @@ class AMR1(Agent):
                 '3': m4,
                 '3d':m4_Mdock,
                 '-1':loading_dock,
+                '-11':loading_Q_dock,
                 '-2':unloading_dock,
                 '-22':unloading_Q_dock,
                 '11':robot1_charging_dock,
                 '22':robot2_charging_dock,
-                '33':robot3_charging_dock
+                '33':robot3_charging_dock,
+                '44':robot4_charging_dock
             }
 
             goal_pose = PoseStamped()
@@ -506,7 +510,7 @@ if __name__ == "__main__":
 
     async def run():
         await amr1.start()
-        amr1.web.start(hostname="127.0.0.1", port="10001")
+        # amr1.web.start(hostname="127.0.0.1", port="10001")
         print("AMR1 started")
 
         try:

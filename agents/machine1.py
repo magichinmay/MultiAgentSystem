@@ -16,15 +16,14 @@ class MachineAgent(Agent):
         # Initialize state1 and state2
         self.state = "waiting for schedule"  # Added initialization for state1
 
-        self.index = 0  # Keep track of which coordinate to send
-        self.data=0
-        self.x=True
-        self.y=True
 
         self.waiting=True
         self.idle=True
         self.jobs=None
         self.Completed_Jobs=[]
+        self.amr=None
+        self.dock_amr=None
+        self.in_dock=False
 
     class AMRFSM(FSMBehaviour):
         async def on_start(self):
@@ -45,7 +44,7 @@ class MachineAgent(Agent):
                         self.agent.jobs = json.loads(operation.body)
                         print("The Jobs to be processed", self.agent.jobs)
                         self.agent.waiting=False
-                        self.set_next_state("ProcessingState")
+                        self.set_next_state("Idle")
                         break  # Exit the loop when a job is received and processed
                 else:
                     print("No message received, waiting...")
@@ -54,61 +53,89 @@ class MachineAgent(Agent):
     class Idle(State):
         async def run(self):
             print("Changing state to Idle")
-            while self.agent.idle==True:
-                msg = await self.receive(timeout=25)
-                if msg:
-                    print(msg.body,"msg from",msg.sender)
-                    performative = msg.get_metadata("performative")
-                    if performative == "ask_machine_for_processing" and msg.body==str(self.agent.jobs[0][0]):
-                        self.agent.amr=msg.sender
-                        print(msg.sender)
-                        reply = Message(to=(msg.sender))
-                        reply.set_metadata("performative", "machine_reply")
-                        reply.body = "Yes"
-                        await self.send(reply)
-                        self.agent.idle=False
-                        self.set_next_state("ProcessingState")
+            if self.agent.in_dock==False:
+                while self.agent.idle==True:
+                    msg = await self.receive(timeout=25)
+                    if msg:
+                        print(msg.body,"msg from",msg.sender)
+                        performative = msg.get_metadata("performative")
+                        if performative == "ask_machine" and msg.body=="canIcome":
+                            self.agent.amr=msg.sender
+                            print(msg.sender)
+                            reply = Message(to=str(msg.sender))
+                            reply.set_metadata("performative", "machine_reply")
+                            reply.body = "Yes"
+                            await self.send(reply)
+                            self.agent.idle=False
+                            self.set_next_state("waiting_for_amr")
+                        else:
+                            self.set_next_state("Idle")
                     else:
+                        print(f"{self.agent.name}: No message received, staying in IDLE state")
                         self.set_next_state("Idle")
+                        # The state machine will automatically go back to IDLE after the timeout
+            if self.agent.in_dock==True:
+                if performative == "ask_machine" and msg.body=="canIcome" and msg.sender.bare==self.agent.dock_amr:
+                    print(msg.sender)
+                    reply = Message(to=str(self.agent.dock_amr))
+                    reply.set_metadata("performative", "machine_reply")
+                    reply.body = "Yes"
+                    await self.send(reply)
+
+
+    class waiting_for_amr(State):
+        async def run(self):
+            print("Changing state to waiting_for_amr")
+            msg = await self.receive(timeout=25)
+            if msg:
+                print(msg.body,"msg from",msg.sender)
+                performative = msg.get_metadata("performative")
+                if performative == "ask_machine" and msg.body=="canIcome":         
+                    print(msg.sender)
+                    self.agent.dock_amr=msg.sender.bare
+                    self.agent.in_dock=True
+                    reply = Message(to=str(msg.sender))
+                    reply.set_metadata("performative", "machine_reply")
+                    reply.body = "come_to_machine_dock"
+                    await self.send(reply)
+                    self.set_next_state("waiting_for_amr")
+
+                elif performative == "waiting_for_machine_to_process" and msg.body=="Ready":
+                    self.agent.amr=msg.sender
+                    self.set_next_state("ProcessingState")
+
                 else:
-                    print(f"{self.agent.name}: No message received, staying in IDLE state")
-                    self.set_next_state("Idle")
-                    # The state machine will automatically go back to IDLE after the timeout
+                    self.set_next_state("waiting_for_amr")
+            else:
+                print(f"{self.agent.name}: No message received, staying in IDLE state")
+                self.set_next_state("waiting_for_amr")
 
     class ProcessingState(State):
         async def run(self):
-            print("waiting for amr")
-            msg=await self.receive(timeout=200)
-            if msg:
-                performative=msg.get_metadata("performative")
-                if performative=="waiting_for_machine_to_process" and msg.body=="Ready":
-                    machining=self.agent.jobs
-                    job=machining[0][0]
-                    operation=machining[0][1]
-                    processing_time=machining[0][2]
+            print("Processing state")
+            machining=self.agent.jobs
+            job=machining[0][0]
+            operation=machining[0][1]
+            processing_time=machining[0][2]
 
-                    print("Processing Job",job,"operation",operation)            
-                    # Simulate processing delay based on ptime
-                    await asyncio.sleep(processing_time)
-                    completed_jobs=self.agent.jobs.pop(0)
-                    self.agent.Completed_Jobs.append(completed_jobs)
+            print("Processing Job",job,"operation",operation)            
+            # Simulate processing delay based on ptime
+            await asyncio.sleep(processing_time)
+            completed_jobs=self.agent.jobs.pop(0)
+            self.agent.Completed_Jobs.append(completed_jobs)
 
-                    # After processing, send a "Processing complete" message back to the sender
-                    response = Message(to=str(msg.sender))
-                    response.set_metadata("performative", "machine_reply")
-                    response.body = "Processing complete"
-                    await self.send(response)
-                    self.agent.idle=True
-                    print("Processing job",job,"completed")
-                    # Transition back to IDLE state
-                    self.set_next_state("ProcessingState")
-                    print("Completed Jobs",self.agent.Completed_Jobs)
-                    print("Remaining Jobs",self.agent.jobs)
-
-                else:
-                    self.set_next_state("ProcessingState")
-            else:
-                self.set_next_state("ProcessingState")
+            # After processing, send a "Processing complete" message back to the sender
+            response = Message(to=str(self.agent.amr))
+            response.set_metadata("performative", "machine_reply")
+            response.body = "Processing complete"
+            await self.send(response)
+            self.agent.idle=True
+            print("Processing job",job,"completed")
+            # Transition back to IDLE state
+            self.set_next_state("ProcessingState")
+            print("Completed Jobs",self.agent.Completed_Jobs)
+            print("Remaining Jobs",self.agent.jobs)
+            self.set_next_state("Idle")
 
 
 
@@ -118,6 +145,7 @@ class MachineAgent(Agent):
         # All the States
         fsm.add_state(name="waiting_for_op", state=self.waiting_for_op(), initial=True)
         fsm.add_state(name="Idle", state=self.Idle())
+        fsm.add_state(name="waiting_for_amr", state=self.waiting_for_amr(), initial=True)
         fsm.add_state(name="ProcessingState", state=self.ProcessingState())
 
         # Transition from one State to another State

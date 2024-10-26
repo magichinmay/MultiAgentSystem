@@ -26,7 +26,7 @@ class SchedulerAgent(Agent):
     def __init__(self, jid, password):
         super().__init__(jid, password)
         self.amrs = []
-        self.JobAgents=["job1@jabber.fr","job2@jabber.fr","job3@jabber.fr"]
+        self.JobAgents=["job1@jabber.fr","job2@jabber.fr","job3@jabber.fr","job4@jabber.fr","job5@jabber.fr"]
         self.Machine=["machine1@jabber.fr","machine2@jabber.fr","machine3@jabber.fr","machine4@jabber.fr"]
         self.job_sets = []
         self.operation_data=[]
@@ -103,7 +103,7 @@ class SchedulerAgent(Agent):
             ptime_data = benchmarks.pinedo['ptime_data']
             amr=len(self.agent.amrs)
             print("No of amrs",amr)
-            jobs=3
+            jobs=5
             machines=4
             scheduler1 = JobShopScheduler(machines, jobs, amr, 50, 0.7, 0.5, 100, machine_data, ptime_data)
             scheduler1.display_schedule = 0
@@ -136,7 +136,7 @@ class SchedulerAgent(Agent):
             machine_data = benchmarks.pinedo['machine_data']
             ptime_data = benchmarks.pinedo['ptime_data']
             amr=len(self.agent.amrs)
-            jobs=3
+            jobs=5
             machines=4
             scheduler1 = JobShopScheduler(machines, jobs, amr, 50, 0.7, 0.5, 100, machine_data, ptime_data)
             scheduler1.display_schedule = 0
@@ -184,7 +184,7 @@ class SchedulerAgent(Agent):
             await self.send(Lmsg2)
             await asyncio.sleep(4)
 
-            unload=Message
+            # unload=Message
 
             #Sends all the Job's opeartion detail to each Machine Agent
             for index,machines in enumerate(self.agent.Machine):

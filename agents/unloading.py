@@ -65,12 +65,18 @@ class LoadingDockAgent(Agent):
                     self.set_next_state(IDLE)
 
             if self.agent.unloading_Q_dock==True:
-                unloading_response = Message(to=str(self.agent.Q_amr))
-                unloading_response.set_metadata("performative", "unload")
-                unloading_response.body = "come to unloading dock"
-                await self.send(unloading_response)
-                self.agent.unloading_Q_dock=False
-                self.set_next_state(UNLOADING)
+                msg = await self.receive(timeout=30)
+                if msg:
+                    if msg.get_metadata("performative") == "ask" and msg.body == "need to unload" and msg.sender.bare==self.agent.Q_amr:
+                        unloading_response = Message(to=str(self.agent.Q_amr))
+                        unloading_response.set_metadata("performative", "unload")
+                        unloading_response.body = "come to unloading dock"
+                        await self.send(unloading_response)
+                        self.agent.unloading_Q_dock=False
+                        self.agent.Q_amr=None
+                        self.set_next_state(UNLOADING)
+                else:
+                    self.set_next_state(IDLE)
 
 
 
