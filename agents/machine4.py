@@ -75,13 +75,24 @@ class MachineAgent(Agent):
                         self.set_next_state("Idle")
                         # The state machine will automatically go back to IDLE after the timeout
             if self.agent.in_dock==True:
-                if performative == "ask_machine" and msg.body=="canIcome" and msg.sender.bare==self.agent.dock_amr:
-                    print(msg.sender)
-                    reply = Message(to=str(self.agent.dock_amr))
-                    reply.set_metadata("performative", "machine_reply")
-                    reply.body = "Yes"
-                    await self.send(reply)
-
+                msg = await self.receive(timeout=25)
+                if msg:
+                    performative = msg.get_metadata("performative")
+                    print("dock amr",self.agent.dock_amr)
+                    print("msg sender",msg.sender.bare)
+                    if performative == "ask_machine" and msg.body=="canIcome":
+                        print(msg.sender)
+                        self.agent.in_dock=False
+                        reply = Message(to=str(msg.sender))
+                        print("sent yes msg to",msg.sender)
+                        reply.set_metadata("performative", "machine_reply")
+                        reply.body = "Yes"
+                        await self.send(reply)
+                        self.set_next_state("waiting_for_amr")
+                    else:
+                        self.set_next_state("Idle")
+                else:
+                    self.set_next_state("Idle")
 
     class waiting_for_amr(State):
         async def run(self):
@@ -145,7 +156,7 @@ class MachineAgent(Agent):
         # All the States
         fsm.add_state(name="waiting_for_op", state=self.waiting_for_op(), initial=True)
         fsm.add_state(name="Idle", state=self.Idle())
-        fsm.add_state(name="waiting_for_amr", state=self.waiting_for_amr(), initial=True)
+        fsm.add_state(name="waiting_for_amr", state=self.waiting_for_amr())
         fsm.add_state(name="ProcessingState", state=self.ProcessingState())
 
         # Transition from one State to another State
@@ -157,6 +168,10 @@ class MachineAgent(Agent):
 
         fsm.add_transition(source="waiting_for_op", dest="ProcessingState")
         fsm.add_transition(source="ProcessingState", dest="waiting_for_op")
+
+        fsm.add_transition(source="Idle", dest="waiting_for_amr")
+        fsm.add_transition(source="waiting_for_amr", dest="waiting_for_amr")        
+        fsm.add_transition(source="waiting_for_amr", dest="ProcessingState")
 
         fsm.add_transition(source="ProcessingState", dest="ProcessingState")
         fsm.add_transition(source="ProcessingState", dest="Idle")

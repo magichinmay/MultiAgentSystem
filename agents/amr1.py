@@ -22,12 +22,16 @@ class AMR1(Agent):
         self.JobsAgents={
             '0':"job1@jabber.fr",
             '1':"job2@jabber.fr",
-            '2':"job3@jabber.fr"
+            '2':"job3@jabber.fr",
+            '3':"job4@jabber.fr",
+            '4':"job5@jabber.fr",
         }
         self.RRJobAgents={
             "job1@jabber.fr":'0',
             "job2@jabber.fr":'1',
-            "job3@jabber.fr":'2'
+            "job3@jabber.fr":'2',
+            "job4@jabber.fr":'3',
+            "job5@jabber.fr":'4',
         }
         self.MachineAgents={
             '0':"machine1@jabber.fr",
@@ -42,13 +46,22 @@ class AMR1(Agent):
             "machine4@jabber.fr":'3'
         }
         self.Workstations = {
-                '0': 'machine1',
-                '1': 'machine2',
-                '2': 'machine3',
-                '3': 'machine4',
+                '0': 'machine0',
+                '0d':'machine0 dock',
+                '1': 'machine1',
+                '1d':'machine1 dock',
+                '2': 'machine2',
+                '2d':'machine2 dock',
+                '3': 'machine3',
+                '3d':'machine3 dock',
                 '-1': 'loading_dock',
+                '-11':'unloading Q dock',
                 '-2': 'unloading_dock',
-                '-22':'unloading_Q_dock'
+                '-22':'unloading_Q_dock',
+                '11':'robot1_charging_dock',
+                '22':'robot2_charging_dock',
+                '33':'robot3_charging_dock',
+                '44':'robot4_charging_dock'
             }
         self.waiting_for_job=True
         self.going_to_loading=True
@@ -283,6 +296,8 @@ class AMR1(Agent):
                             elif performative=="inform_amr" and msg.body=="tasks are done":
                                 print("received task completed msg from",msg.sender)
                                 self.agent.remainingjobs.popleft()
+                                if len(self.agent.remainingjobs)==0:
+                                    self.agent.remainingjobs=None
                                 print(self.agent.remainingjobs,"are remaining jobs")
                                 self.agent.idle=False
                                 self.agent.going_to_unloading=True
@@ -295,6 +310,8 @@ class AMR1(Agent):
 
 
                     while self.agent.in_machine_dock==True:
+                        print("in machine",self.agent.machine)
+                        self.agent.machine = self.agent.machine[:1]
                         tellmachine=Message(to=self.agent.MachineAgents[self.agent.machine])
                         tellmachine.set_metadata("performative", "ask_machine") 
                         tellmachine.body="canIcome"
@@ -304,9 +321,9 @@ class AMR1(Agent):
                             if machine_reply.get_metadata("performative") == "machine_reply" and machine_reply.body == "Yes":
                                 self.agent.in_machine_dock=False
                                 #checkout for error
-                                print('machine:', machine)
-                                self.agent.machine = self.agent.machine[:1]
-                                self.agent.ptime = ptime
+                                print('machine:', self.agent.machine)
+                                # self.agent.machine = self.agent.machine[:1]
+                                # self.agent.ptime = ptime
                                 self.set_next_state("Processing")
 
 
@@ -350,14 +367,14 @@ class AMR1(Agent):
 
 
             m1 = [-4.5,8.3]
-            m1_Mdock=[-4.5,11]
+            m1_Mdock=[-4.5,11.0]
             m2 = [-4.5, 2.9]
             m2_Mdock=[-4.5,-0.06]
             m3 = [1.5, 8.3]
-            m3_Mdock=[1.5,11]
-            m4 = [1.5,2,7 ]
+            m3_Mdock=[1.5,11.0]
+            m4 = [1.5,2.7 ]
             m4_Mdock=[1.5,-0.04]
-            loading_dock = [-9.15,5,11]
+            loading_dock = [-9.15,5.11]
             loading_Q_dock = [-10,9.4]
             unloading_dock = [7.32,5.2]
             unloading_Q_dock=[9.5,0.637]
@@ -389,7 +406,7 @@ class AMR1(Agent):
             goal_pose.header.frame_id = 'map'
             goal_pose.header.stamp = self.agent.navigator.get_clock().now().to_msg()
             goal_pose.pose.position.x = poses[pose][0]
-            goal_pose.pose.position.y = poses[pose][1] 
+            goal_pose.pose.position.y = poses[pose][1]
             goal_pose.pose.orientation.w = 1.0
             print("start navigation")
 
@@ -513,6 +530,7 @@ class AMR1(Agent):
 
         fsm.add_transition(source="Idle", dest="Dock")
         fsm.add_transition(source="Dock", dest="Idle")
+        fsm.add_transition(source="Dock", dest="Processing")
         fsm.add_transition(source="Dock", dest="Dock")
         fsm.add_transition(source="Dock", dest="Ready")
 

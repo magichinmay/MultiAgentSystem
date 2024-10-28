@@ -22,12 +22,16 @@ class AMR4(Agent):
         self.JobsAgents={
             '0':"job1@jabber.fr",
             '1':"job2@jabber.fr",
-            '2':"job3@jabber.fr"
+            '2':"job3@jabber.fr",
+            '3':"job4@jabber.fr",
+            '4':"job5@jabber.fr",
         }
         self.RRJobAgents={
             "job1@jabber.fr":'0',
             "job2@jabber.fr":'1',
-            "job3@jabber.fr":'2'
+            "job3@jabber.fr":'2',
+            "job4@jabber.fr":'3',
+            "job5@jabber.fr":'4',
         }
         self.MachineAgents={
             '0':"machine1@jabber.fr",
@@ -42,13 +46,22 @@ class AMR4(Agent):
             "machine4@jabber.fr":'3'
         }
         self.Workstations = {
-                '0': 'machine1',
-                '1': 'machine2',
-                '2': 'machine3',
-                '3': 'machine4',
+                '0': 'machine0',
+                '0d':'machine0 dock',
+                '1': 'machine1',
+                '1d':'machine1 dock',
+                '2': 'machine2',
+                '2d':'machine2 dock',
+                '3': 'machine3',
+                '3d':'machine3 dock',
                 '-1': 'loading_dock',
+                '-11':'unloading Q dock',
                 '-2': 'unloading_dock',
-                '-22':'unloading_Q_dock'
+                '-22':'unloading_Q_dock',
+                '11':'robot1_charging_dock',
+                '22':'robot2_charging_dock',
+                '33':'robot3_charging_dock',
+                '44':'robot4_charging_dock'
             }
         self.waiting_for_job=True
         self.going_to_loading=True
@@ -64,6 +77,7 @@ class AMR4(Agent):
         self.MachineData=None
         self.unloading_dock_response=False 
         self.dock=False
+        self.in_machine_dock=False
 
     class AMRFSM(FSMBehaviour):
         async def on_start(self):
@@ -78,7 +92,7 @@ class AMR4(Agent):
             print("AMR4 is Ready")
             register = Message(to="scheduler@jabber.fr")
             register.set_metadata("performative", "Register")
-            register.body = "robot3@jabber.fr"
+            register.body = "robot4@jabber.fr"
             await self.send(register)  # Sending the register message
             await asyncio.sleep(2)
             msg1 = await self.receive(timeout=None)
@@ -127,7 +141,7 @@ class AMR4(Agent):
         async def run(self):
             if self.agent.going_to_loading==True:    
                 print("Going to Loading Dock")
-                self.agent.machine = -1
+                self.agent.machine = '-1'
                 self.agent.ptime = 3
                 self.set_next_state("Processing")
 
@@ -164,13 +178,13 @@ class AMR4(Agent):
                     if my_job:
                         if my_job.get_metadata("performative") == "unload" and my_job.body == "come to unloading dock":
                             self.agent.unloading_dock_response=True
-                            self.agent.machine = -2
+                            self.agent.machine = '-2'
                             # self.agent.ptime = 3
                             self.set_next_state("Processing")
 
                         elif my_job.get_metadata("performative") == "unload" and my_job.body == "come to unloading Q dock":
                             self.agent.unloading_dock_response=True
-                            self.agent.machine = -22
+                            self.agent.machine = '-22'
                             # self.agent.ptime = 3
                             self.set_next_state("Processing")
 
@@ -234,36 +248,46 @@ class AMR4(Agent):
                             if performative == "job_orders":
                                 try:
                                     data2 = json.loads(msg.body)
-                                    machine=data2[0]
+                                    machine=str(data2[0])
                                     ptime=data2[1]
                                     # MachineData=[self.agent.RRJobAgents[self.agent.JobsAgents[self.agent.remainingjobs[0]]],ptime]
+
                                     self.agent.MachineData=[self.agent.remainingjobs[0],ptime]
                                     print(f"Received coordinates: {machine}")
-                                    askmachine = Message(to=self.agent.MachineAgents[str(machine)])
-                                    askmachine.set_metadata("performative", "ask_machine_for_processing") 
-                                    askmachine.body = str(self.agent.MachineData[0])
-                                    await self.send(askmachine)
-                                    print('confirming idle machine from',self.agent.MachineAgents[str(machine)])
-                                    await asyncio.sleep(1)
-
-                                    # machine_reply=await self.receive(timeout=120)
-                                    # print('got machine reply', machine_reply.body, 'from ', machine_reply.sender)
-                                    # if machine_reply and machine_reply.sender.bare in self.agent.RMachineAgents.keys():
-                                    #     self.agent.machine_reply=machine_reply.sender
-                                    #     performative=machine_reply.get_metadata("performative")
-                                    #     if performative=="machine_reply" and machine_reply.body=="Yes":
-
-
-                                    self.agent.idle=False
-                                    #checkout for error
-                                    print('machine:', machine)
-                                    self.agent.machine = machine
-                                    self.agent.ptime = ptime
-                                    self.set_next_state("Processing")
-
-                                    # else:
-                                    #     self.set_next_state("Idle")  
+                                    machinereply=False
+                                    while machinereply==False:
+                                        askmachine = Message(to=self.agent.MachineAgents[machine])
+                                        askmachine.set_metadata("performative", "ask_machine") 
+                                        askmachine.body="canIcome"
+                                        await self.send(askmachine)
                                     
+
+                                        machine_reply= await self.receive(timeout=30)
+                                        if machine_reply:
+                                            if machine_reply.get_metadata("performative") == "machine_reply" and machine_reply.body == "Yes":
+                                                self.agent.idle=False
+                                                machinereply=True
+                                                #checkout for error
+                                                print('machine:', machine)
+                                                self.agent.machine = machine
+                                                self.agent.ptime = ptime
+                                                self.set_next_state("Processing")
+                                            elif machine_reply.get_metadata("performative") == "machine_reply" and machine_reply.body == "come_to_machine_dock":
+                                                self.agent.idle=False
+                                                machinereply=True
+                                                #checkout for error
+                                                print('machine:', machine,"dock")
+                                                self.agent.machine = machine+'d'
+                                                self.agent.ptime = ptime
+                                                self.set_next_state("Processing")
+                                            
+                                    
+
+                                    # askmachine.set_metadata("performative", "ask_machine_for_processing") 
+                                    # askmachine.body = str(self.agent.MachineData[0])
+                                    # await self.send(askmachine)
+                                    # print('confirming idle machine from',self.agent.MachineAgents[machine])
+                                    # await asyncio.sleep(1)
                        
                                 except json.JSONDecodeError:
                                     print("Error: Unable to decode message body as JSON.")
@@ -272,6 +296,9 @@ class AMR4(Agent):
                             elif performative=="inform_amr" and msg.body=="tasks are done":
                                 print("received task completed msg from",msg.sender)
                                 self.agent.remainingjobs.popleft()
+                                if len(self.agent.remainingjobs)==0:
+                                    self.agent.remainingjobs=None
+                                print(self.agent.remainingjobs,"are remaining jobs")
                                 self.agent.idle=False
                                 self.agent.going_to_unloading=True
                                 self.agent.travelling=True
@@ -281,12 +308,31 @@ class AMR4(Agent):
                             print("No Message Received")
                             self.set_next_state("Idle")
 
+
+                    while self.agent.in_machine_dock==True:
+                        print("in machine",self.agent.machine)
+                        self.agent.machine = self.agent.machine[:1]
+                        tellmachine=Message(to=self.agent.MachineAgents[self.agent.machine])
+                        tellmachine.set_metadata("performative", "ask_machine") 
+                        tellmachine.body="canIcome"
+                        await self.send(tellmachine)
+                        machine_reply= await self.receive(timeout=30)
+                        if machine_reply:
+                            if machine_reply.get_metadata("performative") == "machine_reply" and machine_reply.body == "Yes":
+                                self.agent.in_machine_dock=False
+                                #checkout for error
+                                print('machine:', self.agent.machine)
+                                # self.agent.machine = self.agent.machine[:1]
+                                # self.agent.ptime = ptime
+                                self.set_next_state("Processing")
+
+
                     while self.agent.travelling==False:
                         await asyncio.sleep(2)            
-                        tellmachine=Message(to=self.agent.MachineAgents[str(self.agent.machine)])
+                        tellmachine=Message(to=self.agent.MachineAgents[self.agent.machine])
                         tellmachine.set_metadata("performative","waiting_for_machine_to_process")
                         tellmachine.body="Ready"
-                        print("sending",tellmachine.body,"to machine",self.agent.MachineAgents[str(self.agent.machine)])
+                        print("sending",tellmachine.body,"to machine",self.agent.MachineAgents[self.agent.machine])
                         await self.send(tellmachine)
                         await asyncio.sleep(1)
                         machine_finish=await self.receive(timeout=60)
@@ -316,25 +362,26 @@ class AMR4(Agent):
 
     class Processing(State):
         async def run(self):
-            print("Going to",self.agent.Workstations[str(self.agent.machine)])
+            print("Going to",self.agent.Workstations[self.agent.machine])
             pose=self.agent.machine
 
 
-            m1 = [-3.32, 6.65]
-            m1_Mdock=[-4.5,7.43]
-            m2 = [-3.38, 1.46]
-            m2_Mdock=[-4.5,0.47]
-            m3 = [1.627, 6.459]
-            m3_Mdock=[0.55,7.5]
-            m4 = [1.681, 1.407]
-            m4_Mdock=[0.55,0.002]
-            loading_dock = [-6.69, 4.028]
-            unloading_dock = [3.52, 3.96]
-            unloading_Q_dock=[4.36,0.79]
-            robot1_charging_dock=[-7.47,0.86]
-            robot2_charging_dock=[-7.47,7.22]
-            robot3_charging_dock=[4.28,7.41]
-            robot4_charging_dock=[]
+            m1 = [-4.5,8.3]
+            m1_Mdock=[-4.5,11.0]
+            m2 = [-4.5, 2.9]
+            m2_Mdock=[-4.5,-0.06]
+            m3 = [1.5, 8.3]
+            m3_Mdock=[1.5,11.0]
+            m4 = [1.5,2.7 ]
+            m4_Mdock=[1.5,-0.04]
+            loading_dock = [-9.15,5.11]
+            loading_Q_dock = [-10,9.4]
+            unloading_dock = [7.32,5.2]
+            unloading_Q_dock=[9.5,0.637]
+            robot1_charging_dock=[-6.5,-6.8]
+            robot2_charging_dock=[-8.53,-7.03]
+            robot3_charging_dock=[-10.09,-6.84]
+            robot4_charging_dock=[-11.08,-4.77]
 
             poses = {
                 '0': m1,
@@ -346,6 +393,7 @@ class AMR4(Agent):
                 '3': m4,
                 '3d':m4_Mdock,
                 '-1':loading_dock,
+                '-11':loading_Q_dock,
                 '-2':unloading_dock,
                 '-22':unloading_Q_dock,
                 '11':robot1_charging_dock,
@@ -357,8 +405,8 @@ class AMR4(Agent):
             goal_pose = PoseStamped()
             goal_pose.header.frame_id = 'map'
             goal_pose.header.stamp = self.agent.navigator.get_clock().now().to_msg()
-            goal_pose.pose.position.x = poses[str(pose)][0]
-            goal_pose.pose.position.y = poses[str(pose)][1] 
+            goal_pose.pose.position.x = poses[pose][0]
+            goal_pose.pose.position.y = poses[pose][1]
             goal_pose.pose.orientation.w = 1.0
             print("start navigation")
 
@@ -368,30 +416,35 @@ class AMR4(Agent):
             print("give result")
             result = self.agent.navigator.getResult()
             if result == TaskResult.SUCCEEDED:
-                if self.agent.machine==-1:
+                if self.agent.machine=='-1':
                     print("Reached Loading Dock")
                     self.agent.going_to_loading=False
                     self.agent.loading=True
                     self.set_next_state("loading")
 
-                elif self.agent.machine==-2:
+                elif self.agent.machine=='-2':
                     print("Reached Unloading Dock")
                     # self.agent.check_for_breakdown=True
                     self.agent.going_to_unloading=False
                     self.agent.unloading=True
                     self.set_next_state("unloading")
 
-                elif self.agent.machine==-22:
+                elif self.agent.machine=='-22':
                     print("Reached unloading dock Queue")
                     self.agent.unloading_dock_response=False
                     self.agent.going_to_unloading=True
                     self.agent.unloading=False
                     self.set_next_state("unloading")
 
-                elif self.agent.machine==33:
+                elif self.agent.machine=='44':
                     print("Reached charging dock")
                     self.agent.dock=True
                     self.set_next_state("Dock")
+
+                elif self.agent.machine=='0d' or self.agent.machine=='1d' or self.agent.machine=='2d' or self.agent.machine=='3d':
+                    print("Reached machine",self.agent.machine)
+                    self.agent.in_machine_dock=True
+                    self.set_next_state("Idle")
 
                 else:
                     print(f"Reached Machine: {self.agent.machine}") 
@@ -411,7 +464,7 @@ class AMR4(Agent):
             print("State: Breakdown. Sending JID of assistance agent...")
             msg = Message(to="scheduler@jabber.fr")
             msg.set_metadata("performative", "Breakdown: please assist")
-            msg.body = "robot3@jabber.fr"
+            msg.body = "robot4@jabber.fr"
             await self.send(msg)
             print("Breakdown message sent to another agent.")
             self.set_next_state("Idle")
@@ -421,7 +474,7 @@ class AMR4(Agent):
         async def run(self):
             print("In Dock")
             if self.agent.dock==False:
-                self.agent.machine==33
+                self.agent.machine=='44'
                 self.set_next_state("Processing")
             else:
                 my_job=await self.receive(timeout=100)
@@ -435,7 +488,7 @@ class AMR4(Agent):
 
 
     async def setup(self):
-        self.navigator = BasicNavigator(namespace="robot3")
+        self.navigator = BasicNavigator(namespace="robot4")
         fsm = self.AMRFSM()
         #All the States
         fsm.add_state(name="Ready", state=self.Ready(), initial=True)
@@ -477,6 +530,7 @@ class AMR4(Agent):
 
         fsm.add_transition(source="Idle", dest="Dock")
         fsm.add_transition(source="Dock", dest="Idle")
+        fsm.add_transition(source="Dock", dest="Processing")
         fsm.add_transition(source="Dock", dest="Dock")
         fsm.add_transition(source="Dock", dest="Ready")
 
@@ -503,7 +557,7 @@ class AMR4(Agent):
 
 
 if __name__ == "__main__":
-    amr4 = AMR4("robot3@jabber.fr", "changeme")
+    amr4 = AMR4("robot4@jabber.fr", "changeme")
 
     async def run():
         await amr4.start()

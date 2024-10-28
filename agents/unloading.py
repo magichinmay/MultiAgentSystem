@@ -67,8 +67,8 @@ class LoadingDockAgent(Agent):
             if self.agent.unloading_Q_dock==True:
                 msg = await self.receive(timeout=30)
                 if msg:
-                    if msg.get_metadata("performative") == "ask" and msg.body == "need to unload" and msg.sender.bare==self.agent.Q_amr:
-                        unloading_response = Message(to=str(self.agent.Q_amr))
+                    if msg.get_metadata("performative") == "ask" and msg.body == "need to unload":
+                        unloading_response = Message(to=str(msg.sender))
                         unloading_response.set_metadata("performative", "unload")
                         unloading_response.body = "come to unloading dock"
                         await self.send(unloading_response)

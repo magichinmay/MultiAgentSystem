@@ -12,7 +12,7 @@ from aioxmpp import version, disco
 class JobAgent4(Agent):
     def __init__(self, jid, password):
         super().__init__(jid, password)
-        print("Running Job Agent 1")
+        print("Running Job Agent 5")
         # Initialize state1 and state2
         self.state = "waiting for schedule"  # Added initialization for state1
 
@@ -20,7 +20,6 @@ class JobAgent4(Agent):
         self.data=0
         self.x=True
         self.y=True
-        self.amr=None
         self.operations=[]
 
     class AMRFSM(FSMBehaviour):
@@ -69,8 +68,10 @@ class JobAgent4(Agent):
         async def run(self):
             print("Changing state to sendingcoordinates")
             
-            job = await self.receive(timeout=250)
+
+            job = await self.receive(timeout=100)
             if job:
+                print(job.body)
                 performative = job.get_metadata("performative")
                 if performative == "ask_for_op" and job.body=="Idle":
                     print("Received request from",job.sender)
@@ -112,6 +113,7 @@ class JobAgent4(Agent):
                 if performative == "ask_for_op" and job.body=="Idle":
                     print('sent task completed msg to',job.sender)
                     complete1 = Message(to=str(job.sender))
+                    # print("sent msg to",self.agent.amr)
                     complete1.set_metadata("performative", "inform_amr")
                     complete1.body = "tasks are done"
                     self.agent.state = "Complete"
@@ -120,12 +122,6 @@ class JobAgent4(Agent):
                     self.set_next_state("JobComplete") 
             else:
                 self.set_next_state("JobComplete") 
-
-            # newjob = await self.receive(timeout=None)
-            # if newjob:
-            #     performative = newjob.get_metadata("performative")
-            #     if performative == "order" and newjob.body=="newjob":
-            #         self.set_next_state("waitingforjob")
 
     async def setup(self):
         fsm = self.AMRFSM()
@@ -169,8 +165,8 @@ if __name__ == "__main__":
 
     async def run():
         await scheduler_agent.start()
-        # scheduler_agent.web.start(hostname="127.0.0.1", port="100010")
         print("JobAgent4 started")
+        # scheduler_agent.web.start(hostname="127.0.0.1", port="10013")
 
         try:
             while scheduler_agent.is_alive():

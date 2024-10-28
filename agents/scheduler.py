@@ -27,6 +27,7 @@ class SchedulerAgent(Agent):
         super().__init__(jid, password)
         self.amrs = []
         self.JobAgents=["job1@jabber.fr","job2@jabber.fr","job3@jabber.fr","job4@jabber.fr","job5@jabber.fr"]
+        # self.JobAgents=["job1@jabber.fr","job2@jabber.fr","job3@jabber.fr"]
         self.Machine=["machine1@jabber.fr","machine2@jabber.fr","machine3@jabber.fr","machine4@jabber.fr"]
         self.job_sets = []
         self.operation_data=[]
@@ -49,7 +50,7 @@ class SchedulerAgent(Agent):
         async def run(self):
             start_time_schedule = time.time()  # Record the start time
             start_time_reschedule = time.time()  # Record the start time
-            timeout_duration = 24  # Total time to keep the scheduler open
+            timeout_duration = 48  # Total time to keep the scheduler open
 
             if self.agent.open_for_reschedule==False:
                 print("Scheduler open for Registration")
@@ -99,11 +100,11 @@ class SchedulerAgent(Agent):
 
     class Scheduler(State):
         async def run(self):
-            machine_data = benchmarks.pinedo['machine_data']
-            ptime_data = benchmarks.pinedo['ptime_data']
+            machine_data = benchmarks.custom_sim['machine_data']
+            ptime_data = benchmarks.custom_sim['ptime_data']
             amr=len(self.agent.amrs)
             print("No of amrs",amr)
-            jobs=3
+            jobs=5
             machines=4
             scheduler1 = JobShopScheduler(machines, jobs, amr, 50, 0.7, 0.5, 100, machine_data, ptime_data)
             scheduler1.display_schedule = 0
@@ -133,8 +134,8 @@ class SchedulerAgent(Agent):
 
     class Reschedule(State):
         async def run(self):
-            machine_data = benchmarks.pinedo['machine_data']
-            ptime_data = benchmarks.pinedo['ptime_data']
+            machine_data = benchmarks.custom_sim['machine_data']
+            ptime_data = benchmarks.custom_sim['ptime_data']
             amr=len(self.agent.amrs)
             jobs=5
             machines=4
@@ -269,7 +270,7 @@ if __name__ == "__main__":
     async def run():
         await scheduler_agent.start()
         print("SchedulerAgent started")
-        scheduler_agent.web.start(hostname="127.0.0.1", port="10000")
+        # scheduler_agent.web.start(hostname="127.0.0.1", port="10000")
 
         try:
             while scheduler_agent.is_alive():
