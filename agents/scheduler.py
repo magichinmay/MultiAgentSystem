@@ -103,7 +103,7 @@ class SchedulerAgent(Agent):
             ptime_data = benchmarks.pinedo['ptime_data']
             amr=len(self.agent.amrs)
             print("No of amrs",amr)
-            jobs=5
+            jobs=3
             machines=4
             scheduler1 = JobShopScheduler(machines, jobs, amr, 50, 0.7, 0.5, 100, machine_data, ptime_data)
             scheduler1.display_schedule = 0
