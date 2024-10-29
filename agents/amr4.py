@@ -124,11 +124,14 @@ class AMR4(Agent):
                         try:
                             my_job = json.loads(job.body)
                             if isinstance(my_job, list):
-                                print(f"Received Job: {my_job}")
-                                job = [str(element) for element in my_job]
-                                self.agent.remainingjobs=deque(my_job)
-                                self.agent.waiting_for_job=False
-                                self.set_next_state("loading")
+                                if my_job!=[]:
+                                    print(f"Received Job: {my_job}")
+                                    job = [str(element) for element in my_job]
+                                    self.agent.remainingjobs=deque(my_job)
+                                    self.agent.waiting_for_job=False
+                                    self.set_next_state("loading")
+                                else:
+                                    self.set_next_state("Dock")
                             else:
                                 print("Error: Received data is not a valid coordinate.")
                                 self.set_next_state("waitingfor_jobset")
@@ -205,6 +208,7 @@ class AMR4(Agent):
                         print("Job Unloading Completed")
                         if self.agent.remainingjobs==None:
                             print("No Jobs remaining, going to dock")
+                            self.agent.dock=False
                             self.set_next_state("Dock")
                         else:
                              print("going to loading agent to process next job")
