@@ -62,14 +62,15 @@ class LoadingDockAgent(Agent):
                     print("sent job set",job_set,"to",msg.sender)
                     self.set_next_state(LOADING)
 
-                    # elif msg.body == "load_the_job":
-                    #     print("Loading in Progress")
-                    #     # Implement the job informing logic here
-                    #     await asyncio.sleep(5)
-                    #     loading_response = Message(to=str(msg.sender))
-                    #     loading_response.set_metadata("performative", "loading")
-                    #     loading_response.body = "loading_completed"
-                    #     await self.send(loading_response)
+                elif msg.body == "load_the_job":
+                    print("Loading in Progress")
+                    # Implement the job informing logic here
+                    await asyncio.sleep(7)
+                    loading_response = Message(to=str(msg.sender))
+                    loading_response.set_metadata("performative", "loading")
+                    loading_response.body = "loading_completed"
+                    await self.send(loading_response)
+                    self.set_next_state(IDLE) 
                 else:
                     print("Msg recived does not match")
                     self.set_next_state(IDLE)               
