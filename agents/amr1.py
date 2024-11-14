@@ -1,5 +1,5 @@
 from spade.agent import Agent
-from spade.behaviour import FSMBehaviour, State
+from spade.behaviour import FSMBehaviour, State, CyclicBehaviour
 from spade.message import Message
 import asyncio
 import json
@@ -10,6 +10,10 @@ from rclpy.duration import Duration
 import rclpy
 from collections import deque
 import time
+from tf_transformations import euler_from_quaternion
+from geometry_msgs.msg import TransformStamped
+import tf2_ros
+
 
 if not rclpy.ok():  # Ensure rclpy.init() is called only once
     rclpy.init()
@@ -17,6 +21,11 @@ if not rclpy.ok():  # Ensure rclpy.init() is called only once
 class AMR1(Agent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+        self.timer = self.create_timer(1.0, self.get_robot_position)
+
         self.remainingjobs=deque()
         self.completed_jobs = []
         self.JobsAgents={
@@ -78,6 +87,7 @@ class AMR1(Agent):
         self.unloading_dock_response=False 
         self.dock=False
         self.in_machine_dock=False
+        self.breakdown=False
 
     class AMRFSM(FSMBehaviour):
         async def on_start(self):
@@ -135,9 +145,23 @@ class AMR1(Agent):
                             else:
                                 print("Error: Received data is not a valid coordinate.")
                                 self.set_next_state("waitingfor_jobset")
+
                         except json.JSONDecodeError:
                             print("Error: Unable to decode message body as JSON.")
                             self.set_next_state("waitingfor_jobset")
+                            
+                    elif job.get_metadata("performative") == "no jobs remaining" and job.body == "wait for new job assignment":
+                        print("No Jobs Remaining waiting Dock")
+                        self.set_next_state("wait_for_newjobs")
+
+
+    class wait_for_newjobs(State):
+        async def run(self):
+            job=await self.receive(timeout=30)
+            if job:
+                performative=job.get_metadata("performative")
+                if performative=="loading_dock_ready":
+            
 
     
     class Loading(State):
@@ -230,6 +254,13 @@ class AMR1(Agent):
                     performative = breakdown_msg.get_metadata("performative")
                     if performative=="user_input" and breakdown_msg.body=="Breakdown":
                         self.set_next_state("Breakdown")
+
+                    else:
+                        print("No Breakdown")
+                        self.agent.idle=False
+                        self.agent.travelling=True
+                        self.set_next_state("unloading")
+
                 else:
                     print("No Breakdown")
                     self.agent.idle=False
@@ -463,15 +494,60 @@ class AMR1(Agent):
                 print('Inspection of shelving failed! Returning to start...')
             
 
-    class Breakdown(State):
+    class Breakdown(CyclicBehaviour):
         async def run(self):
-            print("State: Breakdown. Sending JID of assistance agent...")
-            msg = Message(to="scheduler@jabber.fr")
-            msg.set_metadata("performative", "Breakdown: please assist")
-            msg.body = "robot1@jabber.fr"
-            await self.send(msg)
-            print("Breakdown message sent to another agent.")
-            self.set_next_state("Idle")
+
+            if self.agent.breakdown==False:
+                print("Checking for any Breakdown issue")
+                breakdown_msg=await self.receive(timeout=50)
+                if breakdown_msg:
+                    performative = breakdown_msg.get_metadata("performative")
+                    if performative=="user_input" and breakdown_msg.body=="Breakdown":
+                        self.agent.breakdown=True
+
+                        try:
+                            # Get the transform from 'map' to 'base_link' frames
+                            transform: TransformStamped = self.tf_buffer.lookup_transform(
+                                'map', 'base_link', rclpy.time.Time())
+                            
+                            # Extract translation (x, y)
+                            x = transform.transform.translation.x
+                            y = transform.transform.translation.y
+
+                            # Extract rotation (yaw angle)
+                            orientation_q = transform.transform.rotation
+                            (_, _, yaw) = euler_from_quaternion([
+                                orientation_q.x,
+                                orientation_q.y,
+                                orientation_q.z,
+                                orientation_q.w])
+                            self.agent.amr_breakdown_coordinates=[x,y]
+
+                            self.get_logger().info(f"Robot Position: x={x}, y={y}, yaw={yaw}")
+
+                        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                            self.get_logger().warn("Transform not available")
+
+                    else:
+                        print("No Breakdown")
+
+                else:
+                    print("No MSG")
+
+
+            elif self.agent.breakdown==True:
+                print("State: Breakdown. Sending JID of assistance agent...")
+                msg = Message(to="scheduler@jabber.fr")
+                msg.set_metadata("performative", "Breakdown: please assist")
+                msg.body = str(self.agent.amr_breakdown_coordinates)
+                await self.send(msg)
+                print("Breakdown message sent to scheduler agent.")
+                msg = await self.receive(timeout=30)
+                if msg:
+                    # self.agent.sender_jid =self.agent.RAmrAgents[msg.sender.bare]
+                    if msg.get_metadata("performative") == "ask" and msg.body == "my_job_set":
+                        
+                    
 
 
     class Dock(State):
@@ -490,13 +566,13 @@ class AMR1(Agent):
                 else:
                     self.set_next_state("Dock")
 
-
     async def setup(self):
         self.navigator = BasicNavigator(namespace="robot1")
         fsm = self.AMRFSM()
         #All the States
         fsm.add_state(name="Ready", state=self.Ready(), initial=True)
         fsm.add_state(name="waitingfor_jobset", state=self.waitingfor_jobset())
+        fsm.add_state(name="wait_for_newjobs", state=self.wait_for_newjobs())
         fsm.add_state(name="loading", state=self.Loading())
         fsm.add_state(name="unloading", state=self.Unloading())
         fsm.add_state(name="Idle", state=self.Idle())
@@ -510,6 +586,9 @@ class AMR1(Agent):
         fsm.add_transition(source="Ready", dest="waitingfor_jobset")
 
         fsm.add_transition(source="waitingfor_jobset", dest="waitingfor_jobset")
+        fsm.add_transition(source="waitingfor_jobset", dest="wait_for_newjobs")
+        fsm.add_transition(source="wait_for_newjobs", dest="wait_for_newjobs")
+        fsm.add_transition(source="wait_for_newjobs", dest="Idle")
         fsm.add_transition(source="waitingfor_jobset", dest="loading")
 
         fsm.add_transition(source="loading", dest="loading")

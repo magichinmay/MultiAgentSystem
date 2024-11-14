@@ -35,6 +35,7 @@ class LoadingDockAgent(Agent):
                 if msg and msg.get_metadata("performative") == "Job_sets":
                     job_list = json.loads(msg.body)
                     self.agent.remaining_job_sets = deque(job_list)
+                    self.agent.max_amr=len(self.agent.remaining_job_sets)
                     print(f"Received job sets: {self.agent.remaining_job_sets}")
                     self.agent.Init=False
                     self.set_next_state(IDLE)
@@ -49,7 +50,7 @@ class LoadingDockAgent(Agent):
             msg = await self.receive(timeout=30)
             if msg:
                 # self.agent.sender_jid =self.agent.RAmrAgents[msg.sender.bare]
-                if msg.get_metadata("performative") == "ask" and msg.body == "my_job_set":
+                if msg.get_metadata("performative") == "ask" and msg.body == "my_job_set" and self.agent.max_amr>=self.agent.amr:
                     print(msg.sender,"requesting job set")
                     self.agent.num_amrs_registered += 1
                     job_set = self.agent.remaining_job_sets.popleft()
@@ -60,9 +61,10 @@ class LoadingDockAgent(Agent):
                     call_msg.body = json.dumps(job_set)
                     await self.send(call_msg)
                     print("sent job set",job_set,"to",msg.sender)
+                    self.agent.amr=+1
                     self.set_next_state(LOADING)
 
-                elif msg.body == "load_the_job":
+                elif msg.body == "load_the_job" and self.agent.max_amr>=self.agent.amr:
                     print("Loading in Progress")
                     # Implement the job informing logic here
                     await asyncio.sleep(7)
@@ -71,9 +73,18 @@ class LoadingDockAgent(Agent):
                     loading_response.body = "loading_completed"
                     await self.send(loading_response)
                     self.set_next_state(IDLE) 
+
+                elif msg.get_metadata("performative") == "ask" and msg.body == "my_job_set" and self.agent.max_amr<self.agent.amr:
+                    call_msg = Message(to=str(msg.sender))
+                    call_msg.set_metadata("performative", "no jobs remaining")
+                    call_msg.body = "wait for new job assignment"
+                    await self.send(call_msg)
+                    self.set_next_state(IDLE) 
+
                 else:
                     print("Msg recived does not match")
-                    self.set_next_state(IDLE)               
+                    self.set_next_state(IDLE)              
+
             else:
                 print("No message received.")
                 self.set_next_state(IDLE)
@@ -93,9 +104,11 @@ class LoadingDockAgent(Agent):
                     loading_response.body = "loading_completed"
                     await self.send(loading_response)
                     self.set_next_state(IDLE)
+
                 else:
                     print("Msg recived does not match")
-                    self.set_next_state(LOADING)               
+                    self.set_next_state(LOADING)  
+                                 
             else:
                 print("No message received.")
                 self.set_next_state(LOADING)                
@@ -122,16 +135,20 @@ class LoadingDockAgent(Agent):
         self.num_amrs_registered = 0
         self.sender_jid = None
         self.Init=True
+        self.amr=0
+        self.max_amr=0
 
         self.AmrAgents={
             '0':"robot1@jabber.fr",
             '1':"robot2@jabber.fr",
-            '2':"robot3@jabber.fr"
+            '2':"robot3@jabber.fr",
+            '3':"robot4@jabber.fr"
         }
         self.RAmrAgents={
             "robot1@jabber.fr":'0',
             "robot2@jabber.fr":'1',
-            "robot3@jabber.fr":'2'
+            "robot3@jabber.fr":'2',
+            "robot4@jabber.fr":'3'
         }
 
         fsm = self.LoadingDockBehaviour()

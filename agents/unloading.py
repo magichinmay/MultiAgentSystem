@@ -139,12 +139,14 @@ class LoadingDockAgent(Agent):
         self.AmrAgents={
             '0':"robot1@jabber.fr",
             '1':"robot2@jabber.fr",
-            '2':"robot3@jabber.fr"
+            '2':"robot3@jabber.fr",
+            '3':"robot4@jabber.fr"
         }
         self.RAmrAgents={
             "robot1@jabber.fr":'0',
             "robot2@jabber.fr":'1',
-            "robot3@jabber.fr":'2'
+            "robot3@jabber.fr":'2',
+            "robot4@jabber.fr":'3'
         }
 
         fsm = self.LoadingDockBehaviour()

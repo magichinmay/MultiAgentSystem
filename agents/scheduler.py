@@ -26,8 +26,8 @@ class SchedulerAgent(Agent):
     def __init__(self, jid, password):
         super().__init__(jid, password)
         self.amrs = []
-        self.JobAgents=["job1@jabber.fr","job2@jabber.fr","job3@jabber.fr","job4@jabber.fr","job5@jabber.fr"]
-        # self.JobAgents=["job1@jabber.fr","job2@jabber.fr","job3@jabber.fr"]
+        # self.JobAgents=["job1@jabber.fr","job2@jabber.fr","job3@jabber.fr","job4@jabber.fr","job5@jabber.fr"]
+        self.JobAgents=["job1@jabber.fr","job2@jabber.fr","job3@jabber.fr"]
         self.Machine=["machine1@jabber.fr","machine2@jabber.fr","machine3@jabber.fr","machine4@jabber.fr"]
         self.job_sets = []
         self.operation_data=[]
@@ -37,6 +37,8 @@ class SchedulerAgent(Agent):
         self.rcmax=0
         self.r=False
         self.job_sequences_for_machines = []
+        self.new_jobs=0
+        self.amr_location=[]
         
 
     class AMRFSM(FSMBehaviour):
@@ -65,6 +67,7 @@ class SchedulerAgent(Agent):
                             msg1.body = "Registered"
                             await self.send(msg1)
                             print(msg.body, "Successfully Registered")
+
                     else:
                         print("No Registration Request")
                         await asyncio.sleep(5)
@@ -100,11 +103,16 @@ class SchedulerAgent(Agent):
 
     class Scheduler(State):
         async def run(self):
-            machine_data = benchmarks.custom_sim['machine_data']
-            ptime_data = benchmarks.custom_sim['ptime_data']
-            amr=len(self.agent.amrs)
-            print("No of amrs",amr)
-            jobs=5
+            machine_data = benchmarks.pinedo['machine_data']
+            ptime_data = benchmarks.pinedo['ptime_data']
+            registered_amr=len(self.agent.amrs)
+            print("No of registerd amrs",registered_amr)
+            max_amr=4
+            if registered_amr<=max_amr:
+                amr=registered_amr
+            else:
+                amr=max_amr
+            jobs=3
             machines=4
             scheduler1 = JobShopScheduler(machines, jobs, amr, 50, 0.7, 0.5, 100, machine_data, ptime_data)
             scheduler1.display_schedule = 0
@@ -198,10 +206,27 @@ class SchedulerAgent(Agent):
                 await asyncio.sleep(4)
 
 
-            print("Changing state to RobotRegister")
+            # print("Changing state to RobotRegister")
             self.agent.open_for_reschedule=True
-            self.set_next_state("JobComplete")
+            self.set_next_state("JobProcessing")
 
+    class JobProcessing(State):
+        async def run(self):
+            amr1_reply= await self.receive(timeout=30)
+            if amr1_reply:
+                if amr1_reply.get_metadata("performative") == "Breakdown: please assist" :
+                    self.agent.amr_location = json.loads(amr1_reply.body)
+
+                    Mmsg2=Message(to=str(amr1_reply.sender))
+                    Mmsg2.set_metadata("performative","send jobs yet to processed")
+                    Mmsg2.body="operations"
+                    await self.send(Mmsg2)
+
+                    amr2_reply= await self.receive(timeout=30)
+                    if amr2_reply:
+                        if amr2_reply.get_metadata("performative") == "new jobs" :
+                            self.agent.new_jobs = json.loads(amr2_reply.body)
+                            
 
 
     class JobComplete(State):
@@ -225,6 +250,7 @@ class SchedulerAgent(Agent):
         fsm.add_state(name="Scheduler", state=self.Scheduler())
         fsm.add_state(name="Reschedule", state=self.Reschedule())
         fsm.add_state(name="Send_Schedule", state=self.Send_Schedule())
+        fsm.add_state(name="JobProcessing", state=self.JobProcessing())
         fsm.add_state(name="JobComplete", state=self.JobComplete())
 
         # Transition from one State to another State
@@ -240,7 +266,9 @@ class SchedulerAgent(Agent):
         fsm.add_transition(source="Send_Schedule", dest="Send_Schedule")
         fsm.add_transition(source="Send_Schedule", dest="RobotRegister")
         fsm.add_transition(source="Send_Schedule", dest="Reschedule")
-        fsm.add_transition(source="Send_Schedule", dest="JobComplete")
+        fsm.add_transition(source="Send_Schedule", dest="JobProcessing")
+        fsm.add_transition(source="JobProcessing", dest="JobComplete")
+        fsm.add_transition(source="JobProcessing", dest="JobProcessing")
         fsm.add_transition(source="JobComplete", dest="JobComplete")
 
         self.add_behaviour(fsm)
