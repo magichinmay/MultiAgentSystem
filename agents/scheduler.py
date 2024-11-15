@@ -218,15 +218,23 @@ class SchedulerAgent(Agent):
                     self.agent.amr_location = json.loads(amr1_reply.body)
 
                     Mmsg2=Message(to=str(amr1_reply.sender))
-                    Mmsg2.set_metadata("performative","send jobs yet to processed")
-                    Mmsg2.body="operations"
+                    Mmsg2.set_metadata("performative","ask")
+                    Mmsg2.body="send jobs yet to processed"
                     await self.send(Mmsg2)
 
-                    amr2_reply= await self.receive(timeout=30)
+                    amr2_reply= await self.receive(timeout=40)
                     if amr2_reply:
                         if amr2_reply.get_metadata("performative") == "new jobs" :
                             self.agent.new_jobs = json.loads(amr2_reply.body)
-                            
+                            self.set_next_state("send_breakdown_msg")
+
+                elif amr1_reply.get_metadata("performative") == "Breakdown: please assist" and amr1_reply.body=="":
+
+
+    class send_breakdown_msg(State):
+        async def run(self):
+            
+                                    
 
 
     class JobComplete(State):
@@ -251,6 +259,7 @@ class SchedulerAgent(Agent):
         fsm.add_state(name="Reschedule", state=self.Reschedule())
         fsm.add_state(name="Send_Schedule", state=self.Send_Schedule())
         fsm.add_state(name="JobProcessing", state=self.JobProcessing())
+        fsm.add_state(name="send_breakdown_msg", state=self.send_breakdown_msg())
         fsm.add_state(name="JobComplete", state=self.JobComplete())
 
         # Transition from one State to another State

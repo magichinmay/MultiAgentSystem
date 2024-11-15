@@ -159,8 +159,7 @@ class AMR1(Agent):
         async def run(self):
             job=await self.receive(timeout=30)
             if job:
-                performative=job.get_metadata("performative")
-                if performative=="loading_dock_ready":
+                if job.get_metadata("performative") == "no jobs remaining" and job.body == "wait for new job assignment":
             
 
     
@@ -542,10 +541,14 @@ class AMR1(Agent):
                 msg.body = str(self.agent.amr_breakdown_coordinates)
                 await self.send(msg)
                 print("Breakdown message sent to scheduler agent.")
-                msg = await self.receive(timeout=30)
-                if msg:
+                msg1 = await self.receive(timeout=30)
+                if msg1:
                     # self.agent.sender_jid =self.agent.RAmrAgents[msg.sender.bare]
-                    if msg.get_metadata("performative") == "ask" and msg.body == "my_job_set":
+                    if msg1.get_metadata("performative") == "ask" and msg1.body == "send jobs yet to processed":
+                        msg2 = Message(to="scheduler@jabber.fr")
+                        msg2.set_metadata("performative", "new jobs")
+                        msg2.body = str(self.agent.amr_breakdown_coordinates)
+                        await self.send(msg2)
                         
                     
 
@@ -565,6 +568,7 @@ class AMR1(Agent):
                         self.set_next_state("Dock")
                 else:
                     self.set_next_state("Dock")
+
 
     async def setup(self):
         self.navigator = BasicNavigator(namespace="robot1")
