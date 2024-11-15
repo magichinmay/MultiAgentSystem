@@ -14,9 +14,46 @@ from tf_transformations import euler_from_quaternion
 from geometry_msgs.msg import TransformStamped
 import tf2_ros
 
+from rclpy.node import Node
+from nav_msgs.msg import Odometry
+
+
 
 if not rclpy.ok():  # Ensure rclpy.init() is called only once
     rclpy.init()
+
+
+class OdomSubscriber(Node):
+
+    def __init__(self):
+        super().__init__('robot1_odom_subscriber')
+        # Subscribe to the /odom topic
+        self.subscription = self.create_subscription(
+            Odometry,
+            '/robot1/odom',  # Topic name
+            self.odom_callback,  # Callback function
+            10  # QoS profile, 10 is a common choice
+        )
+        self.subscription  # Prevents the subscription from being garbage collected
+        
+        # Store the latest odometry data
+        self.current_odom = None
+
+    def odom_callback(self, msg):
+        # Update the current odometry with the latest message
+        self.current_odom = msg
+        position = msg.pose.pose.position
+        # orientation = msg.pose.pose.orientation
+        self.get_logger().info(f"Position: x={position.x}, y={position.y}, z={position.z}")
+        # self.get_logger().info(f"Orientation: x={orientation.x}, y={orientation.y}, z={orientation.z}, w={orientation.w}")
+
+    def get_current_odom(self):
+        # Function to return the latest stored odometry data
+        if self.current_odom:
+            return self.current_odom.pose.pose
+        else:
+            return None
+
 
 class AMR1(Agent):
     def __init__(self, *args, **kwargs):
@@ -88,6 +125,10 @@ class AMR1(Agent):
         self.dock=False
         self.in_machine_dock=False
         self.breakdown=False
+        self.amr_location=0
+
+
+
 
     class AMRFSM(FSMBehaviour):
         async def on_start(self):
@@ -151,17 +192,66 @@ class AMR1(Agent):
                             self.set_next_state("waitingfor_jobset")
                             
                     elif job.get_metadata("performative") == "no jobs remaining" and job.body == "wait for new job assignment":
-                        print("No Jobs Remaining waiting Dock")
+                        print("No Jobs Remaining wait in Dock")
                         self.set_next_state("wait_for_newjobs")
 
 
     class wait_for_newjobs(State):
         async def run(self):
-            job=await self.receive(timeout=30)
-            if job:
-                if job.get_metadata("performative") == "no jobs remaining" and job.body == "wait for new job assignment":
-            
+            ask1=await self.receive(timeout=30)
+            if ask1:
+                if ask1.get_metadata("performative") == "ask" and ask1.body=="available" :
+                    tell=Message(to=str(ask1.sender))
+                    tell.set_metadata("performative", "tell")
+                    tell.body = "yes"
+                    print(tell.body)
+                    await self.send(tell)
+                    job=await self.receive(timeout=45)
+                    if job:
+                        if job.get_metadata("performative") == "new jobs" :
+                            self.agent.amr_location=json.loads(job.body)
 
+                            ask=Message(to=str(job.sender))
+                            ask.set_metadata("performative", "ask")
+                            ask.body = "send jobs"
+                            print(ask.body)
+                            await self.send(ask)
+
+                            jobs=await self.receive(timeout=45)
+                            if jobs:
+                                if jobs.get_metadata("performative") == "jobs" :
+                                    job1s=json.loads(jobs.body)
+                                    self.agent.remainingjobs=deque(job1s)
+                                    await asyncio.sleep(3) 
+
+                                    goal_pose = PoseStamped()
+                                    goal_pose.header.frame_id = 'map'
+                                    goal_pose.header.stamp = self.agent.navigator.get_clock().now().to_msg()
+                                    goal_pose.pose.position.x = self.agent.amr_location[0]
+                                    goal_pose.pose.position.y = self.agent.amr_location[1]
+                                    goal_pose.pose.orientation.w = 1.0
+                                    print("start navigation")
+
+                                    self.agent.navigator.goToPose(goal_pose)
+                                    while not self.agent.navigator.isTaskComplete():
+                                        time.sleep(1)
+                                    print("give result")
+                                    result = self.agent.navigator.getResult()
+                                    if result == TaskResult.SUCCEEDED:
+                                        print("Load the job")
+                                        await asyncio.sleep(3) 
+                                        
+                                    elif result == TaskResult.CANCELED:
+                                        print('Inspection of shelving was canceled. Returning to start...')
+                                        exit(1)
+                                        
+                                    elif result == TaskResult.FAILED:
+                                        print('Inspection of shelving failed! Returning to start...')
+            
+                else:
+                    self.set_next_state("wait_for_newjobs")
+            else:
+                self.set_next_state("wait_for_newjobs")
     
     class Loading(State):
         async def run(self):
@@ -503,29 +593,35 @@ class AMR1(Agent):
                     performative = breakdown_msg.get_metadata("performative")
                     if performative=="user_input" and breakdown_msg.body=="Breakdown":
                         self.agent.breakdown=True
+                        odom = self.agent.odom_sub.get_current_odom()
+                        if odom:
+                            print(f'Current Position: x={odom.position.x}, y={odom.position.y}, z={odom.position.z}')
 
-                        try:
-                            # Get the transform from 'map' to 'base_link' frames
-                            transform: TransformStamped = self.tf_buffer.lookup_transform(
-                                'map', 'base_link', rclpy.time.Time())
+
+                        # current_pose=self.agent.navigator.get_current_pose()
+
+                        # try:
+                        #     # Get the transform from 'map' to 'base_link' frames
+                        #     transform: TransformStamped = self.tf_buffer.lookup_transform(
+                        #         'map', 'base_link', rclpy.time.Time())
                             
-                            # Extract translation (x, y)
-                            x = transform.transform.translation.x
-                            y = transform.transform.translation.y
+                        #     # Extract translation (x, y)
+                        #     x = transform.transform.translation.x
+                        #     y = transform.transform.translation.y
 
-                            # Extract rotation (yaw angle)
-                            orientation_q = transform.transform.rotation
-                            (_, _, yaw) = euler_from_quaternion([
-                                orientation_q.x,
-                                orientation_q.y,
-                                orientation_q.z,
-                                orientation_q.w])
-                            self.agent.amr_breakdown_coordinates=[x,y]
+                        #     # Extract rotation (yaw angle)
+                        #     orientation_q = transform.transform.rotation
+                        #     (_, _, yaw) = euler_from_quaternion([
+                        #         orientation_q.x,
+                        #         orientation_q.y,
+                        #         orientation_q.z,
+                        #         orientation_q.w])
+                        #     self.agent.amr_breakdown_coordinates=[x,y]
 
-                            self.get_logger().info(f"Robot Position: x={x}, y={y}, yaw={yaw}")
+                        #     self.get_logger().info(f"Robot Position: x={x}, y={y}, yaw={yaw}")
 
-                        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-                            self.get_logger().warn("Transform not available")
+                        # except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                        #     self.get_logger().warn("Transform not available")
 
                     else:
                         print("No Breakdown")
@@ -546,7 +642,7 @@ class AMR1(Agent):
                     # self.agent.sender_jid =self.agent.RAmrAgents[msg.sender.bare]
                     if msg1.get_metadata("performative") == "ask" and msg1.body == "send jobs yet to processed":
                         msg2 = Message(to="scheduler@jabber.fr")
-                        msg2.set_metadata("performative", "new jobs")
+                        msg2.set_metadata("performative", "jobs")
                         msg2.body = str(self.agent.amr_breakdown_coordinates)
                         await self.send(msg2)
                         
@@ -572,6 +668,8 @@ class AMR1(Agent):
 
     async def setup(self):
         self.navigator = BasicNavigator(namespace="robot1")
+        self.odom_sub=OdomSubscriber()
+        
         fsm = self.AMRFSM()
         #All the States
         fsm.add_state(name="Ready", state=self.Ready(), initial=True)
@@ -641,6 +739,11 @@ class AMR1(Agent):
         # Add features or identities that your agent supports
         iq.payload = disco_data
         return iq
+    
+
+
+
+
 
 
 if __name__ == "__main__":

@@ -224,16 +224,47 @@ class SchedulerAgent(Agent):
 
                     amr2_reply= await self.receive(timeout=40)
                     if amr2_reply:
-                        if amr2_reply.get_metadata("performative") == "new jobs" :
+                        if amr2_reply.get_metadata("performative") == "jobs" :
                             self.agent.new_jobs = json.loads(amr2_reply.body)
-                            self.set_next_state("send_breakdown_msg")
+                            self.set_next_state("check_amr")
 
-                elif amr1_reply.get_metadata("performative") == "Breakdown: please assist" and amr1_reply.body=="":
+                # elif amr1_reply.get_metadata("performative") == "Breakdown: please assist" and amr1_reply.body=="":
+                else:
+                    self.set_next_state("JobProcessing")
+            else:
+                self.set_next_state("JobProcessing")
+
+    class check_amr(State):
+        async def run(self):
+            for amr in self.agent.amrs:
+                Mmsg2=Message(to=str(amr))
+                Mmsg2.set_metadata("performative","ask")
+                Mmsg2.body="available"
+                await self.send(Mmsg2)
+                ask1=await self.receive(timeout=30)
+                if ask1:
+                    if ask1.get_metadata("performative") == "tell" and ask1.body=="yes" :
+                        self.agent.available_amr=ask1.sender
+                        self.set_next_state("send_breakdown_msg")
+                        break  
+                              
 
 
     class send_breakdown_msg(State):
         async def run(self):
-            
+            Mmsg2=Message(to=str(self.agent.available_amr))
+            Mmsg2.set_metadata("performative","new jobs")
+            Mmsg2.body=json.dumps(self.agent.amr_location)
+            await self.send(Mmsg2)
+            ask1=await self.receive(timeout=30)
+            if ask1:
+                if ask1.get_metadata("performative") == "ask" and ask1.body=="send jobs" :
+                    ask=Message(to=str(ask1.sender))
+                    ask.set_metadata("performative", "jobs")
+                    ask.body = json.loads(self.agent.new_jobs)
+                    print(ask.body)
+                    await self.send(ask)
+                    self.set_next_state("JobProcessing")
                                     
 
 
@@ -259,6 +290,7 @@ class SchedulerAgent(Agent):
         fsm.add_state(name="Reschedule", state=self.Reschedule())
         fsm.add_state(name="Send_Schedule", state=self.Send_Schedule())
         fsm.add_state(name="JobProcessing", state=self.JobProcessing())
+        fsm.add_state(name="check_amr", state=self.check_amr())
         fsm.add_state(name="send_breakdown_msg", state=self.send_breakdown_msg())
         fsm.add_state(name="JobComplete", state=self.JobComplete())
 
