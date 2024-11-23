@@ -1,5 +1,5 @@
 from spade.agent import Agent
-from spade.behaviour import FSMBehaviour, State
+from spade.behaviour import FSMBehaviour, State, CyclicBehaviour
 from spade.message import Message
 import asyncio
 import json
@@ -10,13 +10,59 @@ from rclpy.duration import Duration
 import rclpy
 from collections import deque
 import time
+from tf_transformations import euler_from_quaternion
+from geometry_msgs.msg import TransformStamped
+import tf2_ros
+
+from rclpy.node import Node
+from nav_msgs.msg import Odometry
+
+
 
 if not rclpy.ok():  # Ensure rclpy.init() is called only once
     rclpy.init()
 
+
+class OdomSubscriber(Node):
+
+    def __init__(self):
+        super().__init__('robot1_odom_subscriber')
+        # Subscribe to the /odom topic
+        self.subscription = self.create_subscription(
+            Odometry,
+            '/robot3/odom',  # Topic name
+            self.odom_callback,  # Callback function
+            10  # QoS profile, 10 is a common choice
+        )
+        self.subscription  # Prevents the subscription from being garbage collected
+        
+        # Store the latest odometry data
+        self.current_odom = None
+
+    def odom_callback(self, msg):
+        # Update the current odometry with the latest message
+        self.current_odom = msg
+        position = msg.pose.pose.position
+        # orientation = msg.pose.pose.orientation
+        self.get_logger().info(f"Position: x={position.x}, y={position.y}, z={position.z}")
+        # self.get_logger().info(f"Orientation: x={orientation.x}, y={orientation.y}, z={orientation.z}, w={orientation.w}")
+
+    def get_current_odom(self):
+        # Function to return the latest stored odometry data
+        if self.current_odom:
+            return self.current_odom.pose.pose
+        else:
+            return None
+
+
 class AMR3(Agent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+        self.timer = self.create_timer(1.0, self.get_robot_position)
+
         self.remainingjobs=deque()
         self.completed_jobs = []
         self.JobsAgents={
@@ -78,6 +124,11 @@ class AMR3(Agent):
         self.unloading_dock_response=False 
         self.dock=False
         self.in_machine_dock=False
+        self.breakdown=False
+        self.amr_location=0
+
+
+
 
     class AMRFSM(FSMBehaviour):
         async def on_start(self):
@@ -123,7 +174,7 @@ class AMR3(Agent):
                     if performative=="loading_dock_ready":
                         try:
                             my_job = json.loads(job.body)
-                            if isinstance(my_job, list):
+                            if isinstance(my_job, list) :
                                 if my_job!=[]:
                                     print(f"Received Job: {my_job}")
                                     job = [str(element) for element in my_job]
@@ -135,10 +186,72 @@ class AMR3(Agent):
                             else:
                                 print("Error: Received data is not a valid coordinate.")
                                 self.set_next_state("waitingfor_jobset")
+
                         except json.JSONDecodeError:
                             print("Error: Unable to decode message body as JSON.")
                             self.set_next_state("waitingfor_jobset")
+                            
+                    elif job.get_metadata("performative") == "no jobs remaining" and job.body == "wait for new job assignment":
+                        print("No Jobs Remaining wait in Dock")
+                        self.set_next_state("wait_for_newjobs")
 
+
+    class wait_for_newjobs(State):
+        async def run(self):
+            ask1=await self.receive(timeout=30)
+            if ask1:
+                if ask1.get_metadata("performative") == "ask" and ask1.body=="available" :
+                    tell=Message(to=str(ask1.sender))
+                    tell.set_metadata("performative", "tell")
+                    tell.body = "yes"
+                    print(tell.body)
+                    await self.send(tell)
+                    job=await self.receive(timeout=45)
+                    if job:
+                        if job.get_metadata("performative") == "new jobs" :
+                            self.agent.amr_location=json.loads(job.body)
+
+                            ask=Message(to=str(job.sender))
+                            ask.set_metadata("performative", "ask")
+                            ask.body = "send jobs"
+                            print(ask.body)
+                            await self.send(ask)
+
+                            jobs=await self.receive(timeout=45)
+                            if jobs:
+                                if jobs.get_metadata("performative") == "jobs" :
+                                    job1s=json.loads(jobs.body)
+                                    self.agent.remainingjobs=deque(job1s)
+                                    await asyncio.sleep(3) 
+
+                                    goal_pose = PoseStamped()
+                                    goal_pose.header.frame_id = 'map'
+                                    goal_pose.header.stamp = self.agent.navigator.get_clock().now().to_msg()
+                                    goal_pose.pose.position.x = self.agent.amr_location[0]
+                                    goal_pose.pose.position.y = self.agent.amr_location[1]
+                                    goal_pose.pose.orientation.w = 1.0
+                                    print("start navigation")
+
+                                    self.agent.navigator.goToPose(goal_pose)
+                                    while not self.agent.navigator.isTaskComplete():
+                                        time.sleep(1)
+                                    print("give result")
+                                    result = self.agent.navigator.getResult()
+                                    if result == TaskResult.SUCCEEDED:
+                                        print("Load the job")
+                                        await asyncio.sleep(3) 
+                                        
+                                    elif result == TaskResult.CANCELED:
+                                        print('Inspection of shelving was canceled. Returning to start...')
+                                        exit(1)
+                                        
+                                    elif result == TaskResult.FAILED:
+                                        print('Inspection of shelving failed! Returning to start...')
+            
+                else:
+                    self.set_next_state("wait_for_newjobs")
+            else:
+                self.set_next_state("wait_for_newjobs")
     
     class Loading(State):
         async def run(self):
@@ -230,6 +343,13 @@ class AMR3(Agent):
                     performative = breakdown_msg.get_metadata("performative")
                     if performative=="user_input" and breakdown_msg.body=="Breakdown":
                         self.set_next_state("Breakdown")
+
+                    else:
+                        print("No Breakdown")
+                        self.agent.idle=False
+                        self.agent.travelling=True
+                        self.set_next_state("unloading")
+
                 else:
                     print("No Breakdown")
                     self.agent.idle=False
@@ -315,7 +435,7 @@ class AMR3(Agent):
 
                     while self.agent.in_machine_dock==True:
                         print("in machine",self.agent.machine)
-                        self.agent.machine = self.agent.machine[:1]                        
+                        self.agent.machine = self.agent.machine[:1]
                         tellmachine=Message(to=self.agent.MachineAgents[self.agent.machine])
                         tellmachine.set_metadata("performative", "ask_machine") 
                         tellmachine.body="canIcome"
@@ -410,7 +530,7 @@ class AMR3(Agent):
             goal_pose.header.frame_id = 'map'
             goal_pose.header.stamp = self.agent.navigator.get_clock().now().to_msg()
             goal_pose.pose.position.x = poses[pose][0]
-            goal_pose.pose.position.y = poses[pose][1] 
+            goal_pose.pose.position.y = poses[pose][1]
             goal_pose.pose.orientation.w = 1.0
             print("start navigation")
 
@@ -440,7 +560,7 @@ class AMR3(Agent):
                     self.agent.unloading=False
                     self.set_next_state("unloading")
 
-                elif self.agent.machine=='33':
+                elif self.agent.machine=='11':
                     print("Reached charging dock")
                     self.agent.dock=True
                     self.set_next_state("Dock")
@@ -463,22 +583,77 @@ class AMR3(Agent):
                 print('Inspection of shelving failed! Returning to start...')
             
 
-    class Breakdown(State):
+    class Breakdown(CyclicBehaviour):
         async def run(self):
-            print("State: Breakdown. Sending JID of assistance agent...")
-            msg = Message(to="scheduler@jabber.fr")
-            msg.set_metadata("performative", "Breakdown: please assist")
-            msg.body = "robot3@jabber.fr"
-            await self.send(msg)
-            print("Breakdown message sent to another agent.")
-            self.set_next_state("Idle")
+
+            if self.agent.breakdown==False:
+                print("Checking for any Breakdown issue")
+                breakdown_msg=await self.receive(timeout=50)
+                if breakdown_msg:
+                    performative = breakdown_msg.get_metadata("performative")
+                    if performative=="user_input" and breakdown_msg.body=="Breakdown":
+                        self.agent.breakdown=True
+                        odom = self.agent.odom_sub.get_current_odom()
+                        if odom:
+                            print(f'Current Position: x={odom.position.x}, y={odom.position.y}, z={odom.position.z}')
+
+
+                        # current_pose=self.agent.navigator.get_current_pose()
+
+                        # try:
+                        #     # Get the transform from 'map' to 'base_link' frames
+                        #     transform: TransformStamped = self.tf_buffer.lookup_transform(
+                        #         'map', 'base_link', rclpy.time.Time())
+                            
+                        #     # Extract translation (x, y)
+                        #     x = transform.transform.translation.x
+                        #     y = transform.transform.translation.y
+
+                        #     # Extract rotation (yaw angle)
+                        #     orientation_q = transform.transform.rotation
+                        #     (_, _, yaw) = euler_from_quaternion([
+                        #         orientation_q.x,
+                        #         orientation_q.y,
+                        #         orientation_q.z,
+                        #         orientation_q.w])
+                        #     self.agent.amr_breakdown_coordinates=[x,y]
+
+                        #     self.get_logger().info(f"Robot Position: x={x}, y={y}, yaw={yaw}")
+
+                        # except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                        #     self.get_logger().warn("Transform not available")
+
+                    else:
+                        print("No Breakdown")
+
+                else:
+                    print("No MSG")
+
+
+            elif self.agent.breakdown==True:
+                print("State: Breakdown. Sending JID of assistance agent...")
+                msg = Message(to="scheduler@jabber.fr")
+                msg.set_metadata("performative", "Breakdown: please assist")
+                msg.body = str(self.agent.amr_breakdown_coordinates)
+                await self.send(msg)
+                print("Breakdown message sent to scheduler agent.")
+                msg1 = await self.receive(timeout=30)
+                if msg1:
+                    # self.agent.sender_jid =self.agent.RAmrAgents[msg.sender.bare]
+                    if msg1.get_metadata("performative") == "ask" and msg1.body == "send jobs yet to processed":
+                        msg2 = Message(to="scheduler@jabber.fr")
+                        msg2.set_metadata("performative", "jobs")
+                        msg2.body = str(self.agent.amr_breakdown_coordinates)
+                        await self.send(msg2)
+                        
+                    
 
 
     class Dock(State):
         async def run(self):
             print("In Dock")
             if self.agent.dock==False:
-                self.agent.machine=='33'
+                self.agent.machine=='11'
                 self.set_next_state("Processing")
             else:
                 my_job=await self.receive(timeout=100)
@@ -493,10 +668,13 @@ class AMR3(Agent):
 
     async def setup(self):
         self.navigator = BasicNavigator(namespace="robot3")
+        self.odom_sub=OdomSubscriber()
+        
         fsm = self.AMRFSM()
         #All the States
         fsm.add_state(name="Ready", state=self.Ready(), initial=True)
         fsm.add_state(name="waitingfor_jobset", state=self.waitingfor_jobset())
+        fsm.add_state(name="wait_for_newjobs", state=self.wait_for_newjobs())
         fsm.add_state(name="loading", state=self.Loading())
         fsm.add_state(name="unloading", state=self.Unloading())
         fsm.add_state(name="Idle", state=self.Idle())
@@ -510,6 +688,9 @@ class AMR3(Agent):
         fsm.add_transition(source="Ready", dest="waitingfor_jobset")
 
         fsm.add_transition(source="waitingfor_jobset", dest="waitingfor_jobset")
+        fsm.add_transition(source="waitingfor_jobset", dest="wait_for_newjobs")
+        fsm.add_transition(source="wait_for_newjobs", dest="wait_for_newjobs")
+        fsm.add_transition(source="wait_for_newjobs", dest="Idle")
         fsm.add_transition(source="waitingfor_jobset", dest="loading")
 
         fsm.add_transition(source="loading", dest="loading")
@@ -558,6 +739,11 @@ class AMR3(Agent):
         # Add features or identities that your agent supports
         iq.payload = disco_data
         return iq
+    
+
+
+
+
 
 
 if __name__ == "__main__":

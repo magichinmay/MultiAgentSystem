@@ -107,7 +107,7 @@ class SchedulerAgent(Agent):
             ptime_data = benchmarks.pinedo['ptime_data']
             registered_amr=len(self.agent.amrs)
             print("No of registerd amrs",registered_amr)
-            max_amr=4
+            max_amr=3
             if registered_amr<=max_amr:
                 amr=registered_amr
             else:
@@ -310,6 +310,8 @@ class SchedulerAgent(Agent):
         fsm.add_transition(source="Send_Schedule", dest="JobProcessing")
         fsm.add_transition(source="JobProcessing", dest="JobComplete")
         fsm.add_transition(source="JobProcessing", dest="JobProcessing")
+        fsm.add_transition(source="JobProcessing", dest="check_amr")
+        fsm.add_transition(source="check_amr", dest="send_breakdown_msg")
         fsm.add_transition(source="JobComplete", dest="JobComplete")
 
         self.add_behaviour(fsm)
