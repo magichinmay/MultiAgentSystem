@@ -169,7 +169,7 @@ if __name__ == "__main__":
 
     async def run():
         await scheduler_agent.start()
-        scheduler_agent.web.start(hostname="127.0.0.1", port="100010")
+        # scheduler_agent.web.start(hostname="127.0.0.1", port="100010")
         print("JobAgent1 started")
 
         try:

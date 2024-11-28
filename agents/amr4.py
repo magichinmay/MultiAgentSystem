@@ -10,12 +10,13 @@ from rclpy.duration import Duration
 import rclpy
 from collections import deque
 import time
-from tf_transformations import euler_from_quaternion
+# from tf.tf_transformations import euler_from_quaternion
 from geometry_msgs.msg import TransformStamped
 import tf2_ros
 
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
+import threading
 
 
 
@@ -23,45 +24,48 @@ if not rclpy.ok():  # Ensure rclpy.init() is called only once
     rclpy.init()
 
 
-class OdomSubscriber(Node):
+# class OdomSubscriber(Node):
 
-    def __init__(self):
-        super().__init__('robot1_odom_subscriber')
-        # Subscribe to the /odom topic
-        self.subscription = self.create_subscription(
-            Odometry,
-            '/robot4/odom',  # Topic name
-            self.odom_callback,  # Callback function
-            10  # QoS profile, 10 is a common choice
-        )
-        self.subscription  # Prevents the subscription from being garbage collected
+#     def __init__(self):
+#         super().__init__('robot4_odom_subscriber')
+#         # Subscribe to the /odom topic
+#         self.subscription = self.create_subscription(
+#             Odometry,
+#             '/robot4/odom',  # Topic name
+#             self.odom_callback,  # Callback function
+#             10  # QoS profile, 10 is a common choice
+#         )
+#         self.subscription  # Prevents the subscription from being garbage collected
         
-        # Store the latest odometry data
-        self.current_odom = None
+#         # Store the latest odometry data
+#         self.current_odom = None
 
-    def odom_callback(self, msg):
-        # Update the current odometry with the latest message
-        self.current_odom = msg
-        position = msg.pose.pose.position
-        # orientation = msg.pose.pose.orientation
-        self.get_logger().info(f"Position: x={position.x}, y={position.y}, z={position.z}")
-        # self.get_logger().info(f"Orientation: x={orientation.x}, y={orientation.y}, z={orientation.z}, w={orientation.w}")
+#     def odom_callback(self, msg):
+#         # Update the current odometry with the latest message
+#         self.current_odom = msg
+#         position = msg.pose.pose.position
+#         # orientation = msg.pose.pose.orientation
+#         # self.get_logger().info(f"Position: x={position.x}, y={position.y}, z={position.z}")
+#         # self.get_logger().info(f"Orientation: x={orientation.x}, y={orientation.y}, z={orientation.z}, w={orientation.w}")
 
-    def get_current_odom(self):
-        # Function to return the latest stored odometry data
-        if self.current_odom:
-            return self.current_odom.pose.pose
-        else:
-            return None
+#     def get_current_odom(self):
+#         # Function to return the latest stored odometry data
+#         if self.current_odom:
+#             return self.current_odom.pose.pose
+#         else:
+#             return None
+        
+#     def spin_in_background(self):
+#         # Run the node in a separate thread
+#         spin_thread = threading.Thread(target=rclpy.spin, args=(self,), daemon=True)
+#         spin_thread.start()
 
 
 class AMR4(Agent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.tf_buffer = tf2_ros.Buffer()
-        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
-        self.timer = self.create_timer(1.0, self.get_robot_position)
+
 
         self.remainingjobs=deque()
         self.completed_jobs = []
@@ -583,68 +587,75 @@ class AMR4(Agent):
                 print('Inspection of shelving failed! Returning to start...')
             
 
-    class Breakdown(CyclicBehaviour):
-        async def run(self):
+    # class Breakdown(CyclicBehaviour):
+    #     async def run(self):
 
-            if self.agent.breakdown==False:
-                print("Checking for any Breakdown issue")
-                breakdown_msg=await self.receive(timeout=50)
-                if breakdown_msg:
-                    performative = breakdown_msg.get_metadata("performative")
-                    if performative=="user_input" and breakdown_msg.body=="Breakdown":
-                        self.agent.breakdown=True
-                        odom = self.agent.odom_sub.get_current_odom()
-                        if odom:
-                            print(f'Current Position: x={odom.position.x}, y={odom.position.y}, z={odom.position.z}')
+    #         if self.agent.breakdown==False:
+    #             print("Checking for any Breakdown issue")
+    #             breakdown_msg=await self.receive(timeout=50)
+    #             if breakdown_msg:
+    #                 performative = breakdown_msg.get_metadata("performative")
+    #                 if performative=="user_input" and breakdown_msg.body=="Breakdown":
+    #                     # rclpy.spin_once(self.agent.odom_sub)
+    #                     self.agent.breakdown=True
+
+    #                     ask_for_coord=Message(to=self.agent.MachineAgents[self.agent.machine])
+    #                     ask_for_coord.set_metadata("performative", "ask_machine") 
+    #                     ask_for_coord.body="canIcome"
+    #                     await self.send(ask_for_coord)
+
+    #                     odom = self.agent.odom_sub.get_current_odom()
+    #                     if odom:
+    #                         print(f'Current Position: x={odom.position.x}, y={odom.position.y}, z={odom.position.z}')
 
 
-                        # current_pose=self.agent.navigator.get_current_pose()
+    #                     # current_pose=self.agent.navigator.get_current_pose()
 
-                        # try:
-                        #     # Get the transform from 'map' to 'base_link' frames
-                        #     transform: TransformStamped = self.tf_buffer.lookup_transform(
-                        #         'map', 'base_link', rclpy.time.Time())
+    #                     # try:
+    #                     #     # Get the transform from 'map' to 'base_link' frames
+    #                     #     transform: TransformStamped = self.tf_buffer.lookup_transform(
+    #                     #         'map', 'base_link', rclpy.time.Time())
                             
-                        #     # Extract translation (x, y)
-                        #     x = transform.transform.translation.x
-                        #     y = transform.transform.translation.y
+    #                     #     # Extract translation (x, y)
+    #                     #     x = transform.transform.translation.x
+    #                     #     y = transform.transform.translation.y
 
-                        #     # Extract rotation (yaw angle)
-                        #     orientation_q = transform.transform.rotation
-                        #     (_, _, yaw) = euler_from_quaternion([
-                        #         orientation_q.x,
-                        #         orientation_q.y,
-                        #         orientation_q.z,
-                        #         orientation_q.w])
-                        #     self.agent.amr_breakdown_coordinates=[x,y]
+    #                     #     # Extract rotation (yaw angle)
+    #                     #     orientation_q = transform.transform.rotation
+    #                     #     (_, _, yaw) = euler_from_quaternion([
+    #                     #         orientation_q.x,
+    #                     #         orientation_q.y,
+    #                     #         orientation_q.z,
+    #                     #         orientation_q.w])
+    #                     #     self.agent.amr_breakdown_coordinates=[x,y]
 
-                        #     self.get_logger().info(f"Robot Position: x={x}, y={y}, yaw={yaw}")
+    #                     #     self.get_logger().info(f"Robot Position: x={x}, y={y}, yaw={yaw}")
 
-                        # except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-                        #     self.get_logger().warn("Transform not available")
+    #                     # except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+    #                     #     self.get_logger().warn("Transform not available")
 
-                    else:
-                        print("No Breakdown")
+    #                 else:
+    #                     print("No Breakdown")
 
-                else:
-                    print("No MSG")
+    #             else:
+    #                 print("No MSG")
 
 
-            elif self.agent.breakdown==True:
-                print("State: Breakdown. Sending JID of assistance agent...")
-                msg = Message(to="scheduler@jabber.fr")
-                msg.set_metadata("performative", "Breakdown: please assist")
-                msg.body = str(self.agent.amr_breakdown_coordinates)
-                await self.send(msg)
-                print("Breakdown message sent to scheduler agent.")
-                msg1 = await self.receive(timeout=30)
-                if msg1:
-                    # self.agent.sender_jid =self.agent.RAmrAgents[msg.sender.bare]
-                    if msg1.get_metadata("performative") == "ask" and msg1.body == "send jobs yet to processed":
-                        msg2 = Message(to="scheduler@jabber.fr")
-                        msg2.set_metadata("performative", "jobs")
-                        msg2.body = str(self.agent.amr_breakdown_coordinates)
-                        await self.send(msg2)
+    #         elif self.agent.breakdown==True:
+    #             print("State: Breakdown. Sending JID of assistance agent...")
+    #             msg = Message(to="scheduler@jabber.fr")
+    #             msg.set_metadata("performative", "Breakdown: please assist")
+    #             msg.body = str(self.agent.amr_breakdown_coordinates)
+    #             await self.send(msg)
+    #             print("Breakdown message sent to scheduler agent.")
+    #             msg1 = await self.receive(timeout=30)
+    #             if msg1:
+    #                 # self.agent.sender_jid =self.agent.RAmrAgents[msg.sender.bare]
+    #                 if msg1.get_metadata("performative") == "ask" and msg1.body == "send jobs yet to processed":
+    #                     msg2 = Message(to="scheduler@jabber.fr")
+    #                     msg2.set_metadata("performative", "jobs")
+    #                     msg2.body = str(self.agent.amr_breakdown_coordinates)
+    #                     await self.send(msg2)
                         
                     
 
@@ -668,7 +679,15 @@ class AMR4(Agent):
 
     async def setup(self):
         self.navigator = BasicNavigator(namespace="robot4")
-        self.odom_sub=OdomSubscriber()
+        # self.odom_sub=OdomSubscriber()
+
+        # self.timer = self.odom_sub.create_timer(1.0, self.get_robot_position)
+
+        # self.tf_buffer = tf2_ros.Buffer()
+        # self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self.odom_sub)
+
+        # spin the odom node
+        # self.odom_sub.spin_in_background()
         
         fsm = self.AMRFSM()
         #All the States
@@ -680,7 +699,7 @@ class AMR4(Agent):
         fsm.add_state(name="Idle", state=self.Idle())
         fsm.add_state(name="Dock", state=self.Dock())
         fsm.add_state(name="Processing", state=self.Processing())
-        fsm.add_state(name="Breakdown", state=self.Breakdown())
+        # fsm.add_state(name="Breakdown", state=self.Breakdown())
 
         # Transition from one State to another State
         fsm.add_transition(source="Ready", dest="Ready")
@@ -702,9 +721,9 @@ class AMR4(Agent):
         fsm.add_transition(source="Idle", dest="Processing")
         fsm.add_transition(source="Processing", dest="Idle")
 
-        fsm.add_transition(source="Idle", dest="Breakdown")
-        fsm.add_transition(source="Breakdown", dest="Idle")
-        fsm.add_transition(source="Processing", dest="Breakdown")
+        # fsm.add_transition(source="Idle", dest="Breakdown")
+        # fsm.add_transition(source="Breakdown", dest="Idle")
+        # fsm.add_transition(source="Processing", dest="Breakdown")
 
         fsm.add_transition(source="Processing", dest="unloading")
         fsm.add_transition(source="unloading", dest="Processing")

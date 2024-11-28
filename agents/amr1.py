@@ -10,58 +10,26 @@ from rclpy.duration import Duration
 import rclpy
 from collections import deque
 import time
-from tf_transformations import euler_from_quaternion
+# from tf.tf_transformations import euler_from_quaternion
 from geometry_msgs.msg import TransformStamped
 import tf2_ros
-
+import time
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
+import threading
+import random
 
-
+breakdown_mode = 0
 
 if not rclpy.ok():  # Ensure rclpy.init() is called only once
     rclpy.init()
-
-
-class OdomSubscriber(Node):
-
-    def __init__(self):
-        super().__init__('robot1_odom_subscriber')
-        # Subscribe to the /odom topic
-        self.subscription = self.create_subscription(
-            Odometry,
-            '/robot1/odom',  # Topic name
-            self.odom_callback,  # Callback function
-            10  # QoS profile, 10 is a common choice
-        )
-        self.subscription  # Prevents the subscription from being garbage collected
-        
-        # Store the latest odometry data
-        self.current_odom = None
-
-    def odom_callback(self, msg):
-        # Update the current odometry with the latest message
-        self.current_odom = msg
-        position = msg.pose.pose.position
-        # orientation = msg.pose.pose.orientation
-        self.get_logger().info(f"Position: x={position.x}, y={position.y}, z={position.z}")
-        # self.get_logger().info(f"Orientation: x={orientation.x}, y={orientation.y}, z={orientation.z}, w={orientation.w}")
-
-    def get_current_odom(self):
-        # Function to return the latest stored odometry data
-        if self.current_odom:
-            return self.current_odom.pose.pose
-        else:
-            return None
 
 
 class AMR1(Agent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.tf_buffer = tf2_ros.Buffer()
-        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
-        self.timer = self.create_timer(1.0, self.get_robot_position)
+
 
         self.remainingjobs=deque()
         self.completed_jobs = []
@@ -109,6 +77,7 @@ class AMR1(Agent):
                 '33':'robot3_charging_dock',
                 '44':'robot4_charging_dock'
             }
+        
         self.waiting_for_job=True
         self.going_to_loading=True
         self.going_to_unloading=True
@@ -126,6 +95,9 @@ class AMR1(Agent):
         self.in_machine_dock=False
         self.breakdown=False
         self.amr_location=0
+
+        self.completedjobs=[]
+
 
 
 
@@ -418,6 +390,8 @@ class AMR1(Agent):
                                     self.set_next_state("Idle")
 
                             elif performative=="inform_amr" and msg.body=="tasks are done":
+                                jobagent=str(self.agent.remainingjobs[0])
+                                self.agent.completedjobs.append(jobagent)
                                 print("received task completed msg from",msg.sender)
                                 self.agent.remainingjobs.popleft()
                                 if len(self.agent.remainingjobs)==0:
@@ -488,6 +462,8 @@ class AMR1(Agent):
         async def run(self):
             print("Going to",self.agent.Workstations[self.agent.machine])
             pose=self.agent.machine
+            current_time = time.time()
+            breakdown_time=random.randint(20,60)
 
 
             m1 = [-4.5,8.3]
@@ -534,9 +510,16 @@ class AMR1(Agent):
             goal_pose.pose.orientation.w = 1.0
             print("start navigation")
 
-            self.agent.navigator.goToPose(goal_pose)
-            while not self.agent.navigator.isTaskComplete():
-                time.sleep(1)
+            # while time.time() - current_time < breakdown_time:
+            #     self.agent.navigator.goToPose(goal_pose)
+
+            while not self.agent.navigator.isTaskComplete() and time.time() - current_time > breakdown_time:
+                time.sleep(1) 
+
+            if time.time() - current_time > breakdown_time and self.agent.machine!='-1':
+                self.agent.navigator.cancelTask()
+                self.set_next_state("Breakdown")
+
             print("give result")
             result = self.agent.navigator.getResult()
             if result == TaskResult.SUCCEEDED:
@@ -588,53 +571,36 @@ class AMR1(Agent):
 
             if self.agent.breakdown==False:
                 print("Checking for any Breakdown issue")
-                breakdown_msg=await self.receive(timeout=50)
-                if breakdown_msg:
-                    performative = breakdown_msg.get_metadata("performative")
-                    if performative=="user_input" and breakdown_msg.body=="Breakdown":
+                # breakdown_msg=await self.receive(timeout=50)
+                # if breakdown_msg:
+                #     performative = breakdown_msg.get_metadata("performative")
+                #     if performative=="user_input" and breakdown_msg.body=="Breakdown":
+                #         print("Received Breakdown Msg")
+                #         # rclpy.spin_once(self.agent.odom_sub)
+                        
+
+                ask_for_coord=Message(to=self.agent.MachineAgents[self.agent.machine])
+                ask_for_coord.set_metadata("performative", "ask_breakdown_detector") 
+                ask_for_coord.body="my_coordinates"
+                await self.send(ask_for_coord)
+
+                coordinates=await self.receive(timeout=50)
+                if coordinates:
+                    performative = coordinates.get_metadata("performative")
+                    if performative=="amr_coordinates" :
+                        coordinate=json.loads(coordinates.body)
+                        print("Breakdown Coordinate",coordinate)
+                        self.agent.amr_breakdown_coordinates=coordinate
                         self.agent.breakdown=True
-                        odom = self.agent.odom_sub.get_current_odom()
-                        if odom:
-                            print(f'Current Position: x={odom.position.x}, y={odom.position.y}, z={odom.position.z}')
 
 
-                        # current_pose=self.agent.navigator.get_current_pose()
-
-                        # try:
-                        #     # Get the transform from 'map' to 'base_link' frames
-                        #     transform: TransformStamped = self.tf_buffer.lookup_transform(
-                        #         'map', 'base_link', rclpy.time.Time())
-                            
-                        #     # Extract translation (x, y)
-                        #     x = transform.transform.translation.x
-                        #     y = transform.transform.translation.y
-
-                        #     # Extract rotation (yaw angle)
-                        #     orientation_q = transform.transform.rotation
-                        #     (_, _, yaw) = euler_from_quaternion([
-                        #         orientation_q.x,
-                        #         orientation_q.y,
-                        #         orientation_q.z,
-                        #         orientation_q.w])
-                        #     self.agent.amr_breakdown_coordinates=[x,y]
-
-                        #     self.get_logger().info(f"Robot Position: x={x}, y={y}, yaw={yaw}")
-
-                        # except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-                        #     self.get_logger().warn("Transform not available")
-
-                    else:
-                        print("No Breakdown")
-
-                else:
-                    print("No MSG")
 
 
             elif self.agent.breakdown==True:
                 print("State: Breakdown. Sending JID of assistance agent...")
                 msg = Message(to="scheduler@jabber.fr")
                 msg.set_metadata("performative", "Breakdown: please assist")
-                msg.body = str(self.agent.amr_breakdown_coordinates)
+                msg.body = json.dumps(self.agent.amr_breakdown_coordinates)
                 await self.send(msg)
                 print("Breakdown message sent to scheduler agent.")
                 msg1 = await self.receive(timeout=30)
@@ -643,7 +609,7 @@ class AMR1(Agent):
                     if msg1.get_metadata("performative") == "ask" and msg1.body == "send jobs yet to processed":
                         msg2 = Message(to="scheduler@jabber.fr")
                         msg2.set_metadata("performative", "jobs")
-                        msg2.body = str(self.agent.amr_breakdown_coordinates)
+                        msg2.body = json.dumps(self.agent.completedjobs)
                         await self.send(msg2)
                         
                     
@@ -668,7 +634,15 @@ class AMR1(Agent):
 
     async def setup(self):
         self.navigator = BasicNavigator(namespace="robot1")
-        self.odom_sub=OdomSubscriber()
+        # self.odom_sub=OdomSubscriber()
+
+        # self.timer = self.odom_sub.create_timer(1.0, self.get_robot_position)
+
+        # self.tf_buffer = tf2_ros.Buffer()
+        # self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self.odom_sub)
+
+        # spin the odom node
+        # self.odom_sub.spin_in_background()
         
         fsm = self.AMRFSM()
         #All the States
@@ -680,7 +654,7 @@ class AMR1(Agent):
         fsm.add_state(name="Idle", state=self.Idle())
         fsm.add_state(name="Dock", state=self.Dock())
         fsm.add_state(name="Processing", state=self.Processing())
-        fsm.add_state(name="Breakdown", state=self.Breakdown())
+        # fsm.add_state(name="Breakdown", state=self.Breakdown())
 
         # Transition from one State to another State
         fsm.add_transition(source="Ready", dest="Ready")
@@ -702,9 +676,9 @@ class AMR1(Agent):
         fsm.add_transition(source="Idle", dest="Processing")
         fsm.add_transition(source="Processing", dest="Idle")
 
-        fsm.add_transition(source="Idle", dest="Breakdown")
-        fsm.add_transition(source="Breakdown", dest="Idle")
-        fsm.add_transition(source="Processing", dest="Breakdown")
+        # fsm.add_transition(source="Idle", dest="Breakdown")
+        # fsm.add_transition(source="Breakdown", dest="Idle")
+        # fsm.add_transition(source="Processing", dest="Breakdown")
 
         fsm.add_transition(source="Processing", dest="unloading")
         fsm.add_transition(source="unloading", dest="Processing")
@@ -720,6 +694,8 @@ class AMR1(Agent):
         fsm.add_transition(source="Dock", dest="Ready")
 
         self.add_behaviour(fsm)
+        b = self.Breakdown()
+        self.add_behaviour(b)
 
         # Register handlers for XMPP version and disco queries
         self.presence.version_handler = self.version_query_handler
@@ -751,7 +727,7 @@ if __name__ == "__main__":
 
     async def run():
         await amr1.start()
-        # amr1.web.start(hostname="127.0.0.1", port="10001")
+        amr1.web.start(hostname="127.0.0.1", port="10001")
         print("AMR1 started")
 
         try:
