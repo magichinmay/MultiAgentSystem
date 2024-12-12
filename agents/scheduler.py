@@ -26,10 +26,10 @@ class SchedulerAgent(Agent):
     def __init__(self, jid, password):
         super().__init__(jid, password)
         self.amrs = []
-        # self.JobAgents=["job1@jabber.fr","job2@jabber.fr","job3@jabber.fr","job4@jabber.fr","job5@jabber.fr","job6@jabber.fr"]
-        self.JobAgents=["job1@jabber.fr","job2@jabber.fr","job3@jabber.fr"]
-        self.Machine=["machine1@jabber.fr","machine2@jabber.fr","machine3@jabber.fr","machine4@jabber.fr"]
-        # self.Machine=["machine1@jabber.fr","machine2@jabber.fr","machine3@jabber.fr","machine4@jabber.fr","machine5@jabber.fr","machine6@jabber.fr"]
+        self.JobAgents=["job1@jabber.fr","job2@jabber.fr","job3@jabber.fr","job4@jabber.fr","job5@jabber.fr","job6@jabber.fr"]
+        # self.JobAgents=["job1@jabber.fr","job2@jabber.fr","job3@jabber.fr"]
+        # self.Machine=["machine1@jabber.fr","machine2@jabber.fr","machine3@jabber.fr","machine4@jabber.fr"]
+        self.Machine=["machine1@jabber.fr","machine2@jabber.fr","machine3@jabber.fr","machine4@jabber.fr","machine5@jabber.fr","machine6@jabber.fr"]
         self.job_sets = []
         self.operation_data=[]
         self.machine_job_set = []
@@ -105,19 +105,19 @@ class SchedulerAgent(Agent):
 
     class Scheduler(State):
         async def run(self):
-            # machine_data = benchmarks.ft06['machine_data']
-            # ptime_data = benchmarks.ft06['ptime_data']
-            machine_data = benchmarks.pinedo['machine_data']
-            ptime_data = benchmarks.pinedo['ptime_data']
+            machine_data = benchmarks.ft06['machine_data']
+            ptime_data = benchmarks.ft06['ptime_data']
+            # machine_data = benchmarks.pinedo['machine_data']
+            # ptime_data = benchmarks.pinedo['ptime_data']
             registered_amr=len(self.agent.amrs)
             print("No of registerd amrs",registered_amr)
-            max_amr=3
+            max_amr=4
             if registered_amr<=max_amr:
                 amr=registered_amr
             else:
                 amr=max_amr
-            jobs=3
-            machines=4
+            jobs=6
+            machines=6
             scheduler1 = JobShopScheduler(machines, jobs, amr, 50, 0.7, 0.5, 100, machine_data, ptime_data)
             scheduler1.display_schedule = 1
             chromsome1 = scheduler1.GeneticAlgorithm()

@@ -441,6 +441,7 @@ class AMR2(Agent):
                                     self.agent.remainingjobs=None
                                 print(self.agent.remainingjobs,"are remaining jobs")
                                 self.agent.idle=False
+                                self.agent.unloading_dock_response=False
                                 self.agent.going_to_unloading=True
                                 self.agent.travelling=True
                                 self.agent.unloading=False

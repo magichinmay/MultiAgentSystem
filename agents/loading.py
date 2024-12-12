@@ -136,7 +136,7 @@ class LoadingDockAgent(Agent):
         self.sender_jid = None
         self.Init=True
         self.amr=0
-        self.max_amr=3
+        self.max_amr=6
 
         self.AmrAgents={
             '0':"robot1@jabber.fr",
