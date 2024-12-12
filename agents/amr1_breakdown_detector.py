@@ -71,17 +71,19 @@ class BreakdownDetector(Agent):
                             if odom:
                                 print(f'Current Position: x={odom.position.x}, y={odom.position.y}, z={odom.position.z}')
                                 print(f'Orientation: x={odom.orientation.x}, y={odom.orientation.y}, z={odom.orientation.z}, w={odom.orientation.w}')
+
                     
                     except KeyboardInterrupt:
-                        pass
-                    finally:
-                        # Clean up when the script is stopped
-                        self.agent.odom_sub.destroy_node()
                         rclpy.shutdown()
+                        pass
+                    # finally:
+                    #     # Clean up when the script is stopped
+                    #     self.agent.odom_sub.destroy_node()
+                    #     rclpy.shutdown()
    
                     tell=Message(to=str(ask1.sender))
                     tell.set_metadata("performative", "amr_coordinates")
-                    tell.body = json.dumps(odom)
+                    tell.body = json.dumps([odom.position.x + 1 ,odom.position.y])
                     print(tell.body)
                     await self.send(tell)
                 else:
@@ -109,7 +111,7 @@ if __name__ == "__main__":
 
     async def run():
         await agent.start()
-        # agent.web.start(hostname="127.0.0.1", port="10001")
+        agent.web.start(hostname="127.0.0.1", port="10000")
         print("amr1_breakdown_detector started")
 
         try:

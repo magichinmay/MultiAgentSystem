@@ -26,9 +26,10 @@ class SchedulerAgent(Agent):
     def __init__(self, jid, password):
         super().__init__(jid, password)
         self.amrs = []
-        # self.JobAgents=["job1@jabber.fr","job2@jabber.fr","job3@jabber.fr","job4@jabber.fr","job5@jabber.fr"]
+        # self.JobAgents=["job1@jabber.fr","job2@jabber.fr","job3@jabber.fr","job4@jabber.fr","job5@jabber.fr","job6@jabber.fr"]
         self.JobAgents=["job1@jabber.fr","job2@jabber.fr","job3@jabber.fr"]
         self.Machine=["machine1@jabber.fr","machine2@jabber.fr","machine3@jabber.fr","machine4@jabber.fr"]
+        # self.Machine=["machine1@jabber.fr","machine2@jabber.fr","machine3@jabber.fr","machine4@jabber.fr","machine5@jabber.fr","machine6@jabber.fr"]
         self.job_sets = []
         self.operation_data=[]
         self.machine_job_set = []
@@ -39,6 +40,8 @@ class SchedulerAgent(Agent):
         self.job_sequences_for_machines = []
         self.new_jobs=0
         self.amr_location=[]
+        self.completed_job=None
+        self.remaining_jobs=None
         
 
     class AMRFSM(FSMBehaviour):
@@ -100,9 +103,10 @@ class SchedulerAgent(Agent):
                     self.set_next_state("Reschedule")
             
 
-
     class Scheduler(State):
         async def run(self):
+            # machine_data = benchmarks.ft06['machine_data']
+            # ptime_data = benchmarks.ft06['ptime_data']
             machine_data = benchmarks.pinedo['machine_data']
             ptime_data = benchmarks.pinedo['ptime_data']
             registered_amr=len(self.agent.amrs)
@@ -115,7 +119,7 @@ class SchedulerAgent(Agent):
             jobs=3
             machines=4
             scheduler1 = JobShopScheduler(machines, jobs, amr, 50, 0.7, 0.5, 100, machine_data, ptime_data)
-            scheduler1.display_schedule = 0
+            scheduler1.display_schedule = 1
             chromsome1 = scheduler1.GeneticAlgorithm()
             self.agent.operation_data=scheduler1.operation_data
             
@@ -139,7 +143,6 @@ class SchedulerAgent(Agent):
             self.set_next_state("Send_Schedule")
 
 
-
     class Reschedule(State):
         async def run(self):
             machine_data = benchmarks.custom_sim['machine_data']
@@ -159,8 +162,6 @@ class SchedulerAgent(Agent):
 
             print("machine_job_set",self.agent.machine_job_set)
             self.set_next_state("Send_Schedule")
-
-
 
 
     class Send_Schedule(State):
@@ -205,28 +206,32 @@ class SchedulerAgent(Agent):
                 print("sent job data to machine to",index)
                 await asyncio.sleep(4)
 
-
             # print("Changing state to RobotRegister")
-            self.agent.open_for_reschedule=True
+            # self.agent.open_for_reschedule=True
             self.set_next_state("JobProcessing")
+
 
     class JobProcessing(State):
         async def run(self):
+            print("waiting amr breakdown msg")
             amr1_reply= await self.receive(timeout=30)
             if amr1_reply:
                 if amr1_reply.get_metadata("performative") == "Breakdown: please assist" :
-                    self.agent.amr_location = json.loads(amr1_reply.body)
+                    print("received breakdown msg")
+                    data= json.loads(amr1_reply.body)
+                    self.agent.amr_location = data["coord"]
+                    self.agent.remaining_jobs=data["rem_jobs"]
+                    print(data)
+                    # Mmsg2=Message(to=str(amr1_reply.sender))
+                    # Mmsg2.set_metadata("performative","ask")
+                    # Mmsg2.body="send jobs yet to processed"
+                    # await self.send(Mmsg2)
 
-                    Mmsg2=Message(to=str(amr1_reply.sender))
-                    Mmsg2.set_metadata("performative","ask")
-                    Mmsg2.body="send jobs yet to processed"
-                    await self.send(Mmsg2)
-
-                    amr2_reply= await self.receive(timeout=40)
-                    if amr2_reply:
-                        if amr2_reply.get_metadata("performative") == "jobs" :
-                            self.agent.new_jobs = json.loads(amr2_reply.body)
-                            self.set_next_state("check_amr")
+                    # amr2_reply= await self.receive(timeout=40)
+                    # if amr2_reply:
+                    #     if amr2_reply.get_metadata("performative") == "jobs" :
+                    #         self.agent.completed_jobs = json.loads(amr2_reply.body)
+                    self.set_next_state("check_amr")
 
                 # elif amr1_reply.get_metadata("performative") == "Breakdown: please assist" and amr1_reply.body=="":
                 else:
@@ -236,22 +241,27 @@ class SchedulerAgent(Agent):
 
     class check_amr(State):
         async def run(self):
+            print("checking amr if they are free")
             for amr in self.agent.amrs:
                 Mmsg2=Message(to=str(amr))
+                print("sent check msg to",amr)
                 Mmsg2.set_metadata("performative","ask")
                 Mmsg2.body="available"
                 await self.send(Mmsg2)
-                ask1=await self.receive(timeout=30)
+                ask1=await self.receive(timeout=40)
                 if ask1:
                     if ask1.get_metadata("performative") == "tell" and ask1.body=="yes" :
+                        print(ask1.sender,"is free")
                         self.agent.available_amr=ask1.sender
                         self.set_next_state("send_breakdown_msg")
                         break  
-                              
+                else:
+                    print("no msg received from",amr)              
 
 
     class send_breakdown_msg(State):
         async def run(self):
+            print("asking",self.agent.available_amr,"for help")
             Mmsg2=Message(to=str(self.agent.available_amr))
             Mmsg2.set_metadata("performative","new jobs")
             Mmsg2.body=json.dumps(self.agent.amr_location)
@@ -259,9 +269,10 @@ class SchedulerAgent(Agent):
             ask1=await self.receive(timeout=30)
             if ask1:
                 if ask1.get_metadata("performative") == "ask" and ask1.body=="send jobs" :
+                    print("new amr is ready")
                     ask=Message(to=str(ask1.sender))
                     ask.set_metadata("performative", "jobs")
-                    ask.body = json.loads(self.agent.new_jobs)
+                    ask.body = json.dumps(self.agent.remaining_jobs)
                     print(ask.body)
                     await self.send(ask)
                     self.set_next_state("JobProcessing")
@@ -312,6 +323,7 @@ class SchedulerAgent(Agent):
         fsm.add_transition(source="JobProcessing", dest="JobProcessing")
         fsm.add_transition(source="JobProcessing", dest="check_amr")
         fsm.add_transition(source="check_amr", dest="send_breakdown_msg")
+        fsm.add_transition(source="send_breakdown_msg", dest="JobProcessing")
         fsm.add_transition(source="JobComplete", dest="JobComplete")
 
         self.add_behaviour(fsm)

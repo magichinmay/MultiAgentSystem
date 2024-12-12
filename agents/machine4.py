@@ -12,7 +12,7 @@ from aioxmpp import version, disco
 class MachineAgent(Agent):
     def __init__(self, jid, password):
         super().__init__(jid, password)
-        print("Running Machine Agent 1")
+        print("Running Machine Agent 4")
         # Initialize state1 and state2
         self.state = "waiting for schedule"  # Added initialization for state1
 
@@ -27,10 +27,10 @@ class MachineAgent(Agent):
 
     class AMRFSM(FSMBehaviour):
         async def on_start(self):
-            print("Machine Agent 1 started.")
+            print("Machine Agent 4 started.")
 
         async def on_end(self):
-            print("Machine Agent 1 finished.")
+            print("Machine Agent 4 finished.")
 
 
     class waiting_for_op(State):
@@ -115,6 +115,9 @@ class MachineAgent(Agent):
                     self.agent.amr=msg.sender
                     self.set_next_state("ProcessingState")
 
+                elif performative == "Breakdown" and msg.body=="dead":
+                    self.set_next_state("Idle")
+
                 else:
                     self.set_next_state("waiting_for_amr")
             else:
@@ -172,6 +175,7 @@ class MachineAgent(Agent):
         fsm.add_transition(source="Idle", dest="waiting_for_amr")
         fsm.add_transition(source="waiting_for_amr", dest="waiting_for_amr")        
         fsm.add_transition(source="waiting_for_amr", dest="ProcessingState")
+        fsm.add_transition(source="waiting_for_amr", dest="Idle")
 
         fsm.add_transition(source="ProcessingState", dest="ProcessingState")
         fsm.add_transition(source="ProcessingState", dest="Idle")

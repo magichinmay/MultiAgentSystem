@@ -114,9 +114,13 @@ class MachineAgent(Agent):
                 elif performative == "waiting_for_machine_to_process" and msg.body=="Ready":
                     self.agent.amr=msg.sender
                     self.set_next_state("ProcessingState")
+                    
+                elif performative == "Breakdown" and msg.body=="dead":
+                    self.set_next_state("Idle")
 
                 else:
                     self.set_next_state("waiting_for_amr")
+
             else:
                 print(f"{self.agent.name}: No message received, staying in IDLE state")
                 self.set_next_state("waiting_for_amr")
@@ -173,6 +177,7 @@ class MachineAgent(Agent):
         fsm.add_transition(source="Idle", dest="waiting_for_amr")
         fsm.add_transition(source="waiting_for_amr", dest="waiting_for_amr")        
         fsm.add_transition(source="waiting_for_amr", dest="ProcessingState")
+        fsm.add_transition(source="waiting_for_amr", dest="Idle")
 
         fsm.add_transition(source="ProcessingState", dest="ProcessingState")
         fsm.add_transition(source="ProcessingState", dest="Idle")

@@ -75,6 +75,7 @@ class AMR4(Agent):
             '2':"job3@jabber.fr",
             '3':"job4@jabber.fr",
             '4':"job5@jabber.fr",
+            '5':"job6@jabber.fr"
         }
         self.RRJobAgents={
             "job1@jabber.fr":'0',
@@ -82,18 +83,23 @@ class AMR4(Agent):
             "job3@jabber.fr":'2',
             "job4@jabber.fr":'3',
             "job5@jabber.fr":'4',
+            "job6@jabber.fr":'5'
         }
         self.MachineAgents={
             '0':"machine1@jabber.fr",
             '1':"machine2@jabber.fr",
             '2':"machine3@jabber.fr",
-            '3':"machine4@jabber.fr"
+            '3':"machine4@jabber.fr",
+            '4':"machine5@jabber.fr",
+            '5':"machine6@jabber.fr"
         }
         self.RMachineAgents={
             "machine1@jabber.fr":'0',
             "machine2@jabber.fr":'1',
             "machine3@jabber.fr":'2',
-            "machine4@jabber.fr":'3'
+            "machine4@jabber.fr":'3',
+            "machine5@jabber.fr":'4',
+            "machine6@jabber.fr":'5',
         }
         self.Workstations = {
                 '0': 'machine0',
@@ -104,6 +110,10 @@ class AMR4(Agent):
                 '2d':'machine2 dock',
                 '3': 'machine3',
                 '3d':'machine3 dock',
+                '4': 'machine4',
+                '4d':'machine4 dock',
+                '5': 'machine5',
+                '5d':'machine5 dock',
                 '-1': 'loading_dock',
                 '-11':'unloading Q dock',
                 '-2': 'unloading_dock',
@@ -113,6 +123,7 @@ class AMR4(Agent):
                 '33':'robot3_charging_dock',
                 '44':'robot4_charging_dock'
             }
+        
         self.waiting_for_job=True
         self.going_to_loading=True
         self.going_to_unloading=True
@@ -198,6 +209,7 @@ class AMR4(Agent):
                     elif job.get_metadata("performative") == "no jobs remaining" and job.body == "wait for new job assignment":
                         print("No Jobs Remaining wait in Dock")
                         self.set_next_state("wait_for_newjobs")
+                        self.agent.waiting_for_job=False
 
 
     class wait_for_newjobs(State):
@@ -243,7 +255,8 @@ class AMR4(Agent):
                                     result = self.agent.navigator.getResult()
                                     if result == TaskResult.SUCCEEDED:
                                         print("Load the job")
-                                        await asyncio.sleep(3) 
+                                        await asyncio.sleep(4)
+                                        self.set_next_state("Idle")  
                                         
                                     elif result == TaskResult.CANCELED:
                                         print('Inspection of shelving was canceled. Returning to start...')
@@ -494,6 +507,7 @@ class AMR4(Agent):
             pose=self.agent.machine
 
 
+            #for 4 machine
             m1 = [-4.5,8.3]
             m1_Mdock=[-4.5,11.0]
             m2 = [-4.5, 2.9]
@@ -502,6 +516,10 @@ class AMR4(Agent):
             m3_Mdock=[1.5,11.0]
             m4 = [1.5,2.7 ]
             m4_Mdock=[1.5,-0.04]
+            m5 = [1.5,2.7 ]
+            m5_Mdock=[1.5,-0.04]
+            m6 = [1.5,2.7 ]
+            m6_Mdock=[1.5,-0.04]
             loading_dock = [-9.15,5.11]
             loading_Q_dock = [-10,9.4]
             unloading_dock = [7.32,5.2]
@@ -510,6 +528,29 @@ class AMR4(Agent):
             robot2_charging_dock=[-8.53,-7.03]
             robot3_charging_dock=[-10.09,-6.84]
             robot4_charging_dock=[-11.08,-4.77]
+
+            #for 6 machine
+            # m1 = [-6.0,7.9]
+            # m1_Mdock=[-6.0,11.1]
+            # m2 = [-4.65,3.15]
+            # m2_Mdock=[-4.5,-0.02]
+            # m3 = [-1.4,7.88]
+            # m3_Mdock=[-1.4,11.1]
+            # m4 = [-0.3,3.23 ]
+            # m4_Mdock=[-0.3,-0.034]
+            # m5 = [3.61,7.7 ]
+            # m5_Mdock=[3.6,11.22]
+            # m6 = [3.3, 3.21]
+            # m6_Mdock=[3.3,0.01]
+            # loading_dock = [-9.15,5.11]
+            # loading_Q_dock = [-10.0,9.4]
+            # unloading_dock = [7.32,5.2]
+            # unloading_Q_dock=[9.5,0.637]
+            # robot1_charging_dock=[-6.5,-6.8]
+            # robot2_charging_dock=[-8.53,-7.03]
+            # robot3_charging_dock=[-10.09,-6.84]
+            # robot4_charging_dock=[-11.08,-4.77]
+
 
             poses = {
                 '0': m1,
@@ -520,6 +561,10 @@ class AMR4(Agent):
                 '2d':m3_Mdock,
                 '3': m4,
                 '3d':m4_Mdock,
+                '4': m5,
+                '4d':m5_Mdock,
+                '5': m6,
+                '5d':m6_Mdock,
                 '-1':loading_dock,
                 '-11':loading_Q_dock,
                 '-2':unloading_dock,
@@ -569,7 +614,7 @@ class AMR4(Agent):
                     self.agent.dock=True
                     self.set_next_state("Dock")
 
-                elif self.agent.machine=='0d' or self.agent.machine=='1d' or self.agent.machine=='2d' or self.agent.machine=='3d':
+                elif self.agent.machine=='0d' or self.agent.machine=='1d' or self.agent.machine=='2d' or self.agent.machine=='3d' or self.agent.machine=='4d' or self.agent.machine=='5d':
                     print("Reached machine",self.agent.machine)
                     self.agent.in_machine_dock=True
                     self.set_next_state("Idle")
@@ -664,7 +709,7 @@ class AMR4(Agent):
         async def run(self):
             print("In Dock")
             if self.agent.dock==False:
-                self.agent.machine=='11'
+                self.agent.machine='44'
                 self.set_next_state("Processing")
             else:
                 my_job=await self.receive(timeout=100)
